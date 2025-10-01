@@ -1,0 +1,16 @@
+*.pyc
+__pycache__/
+venv/
+.venv/
+env/
+*.log
+*.tmp
+.env
+data/
+*~
+\#*
+.\#*
+*.elc
+*.fasl
+.emacs.desktop
+.emacs.desktop.lock
