@@ -1,169 +1,202 @@
+from typing import Type, Callable
 from functools import reduce
+from typing import Iterable
+from dataclasses import dataclass
+from bqa.backends import Tensor
 
-def run_pipeline(init_arg, *funcs) : return reduce(lambda res, func: func(res), funcs, init_arg)
+# types
 
-def for_each(func, *it):
-        for elems in zip(*it):
-                func(*elems)
+Graph = list[list[int]]
 
-def append_fn(lst, elem):
-        lst.append(elem)
+Edge = tuple[int, int]
 
-def extend_by_defaults(lst, size, make_default_fn):
+EdgeAmpl = tuple[Edge, float]
+
+EdgeAmplIter = Iterable[tuple[Edge, float]]
+
+EdgeToAmpl = dict[Edge, float]
+
+NodeAmplsIter = Iterable[tuple[int, float]]
+
+NodeToAmpl = dict[int, float]
+
+EdgePosIter = Iterable[tuple[Edge, int]]
+
+EdgeToPos = dict[Edge, int]
+
+SubGraph = dict[int, list[int]]  # this is not fully valid subgraph since list[int] can point outside
+
+DegreeToSubGraph = dict[int, SubGraph]
+
+# graph abstraction
+
+def _extend_list_by_defaults(lst: list, size: int, make_default_fn: Callable) -> None:
         while len(lst) < size:
                 lst.append(make_default_fn())
 
-def get_minimal_required_nodes_number(*ids):
-        ids_num = len(ids)
-        if ids_num == 1:
-                return ids[0] + 1
-        elif ids_num > 1:
-                return max(ids[0], ids[1], *ids[2:]) + 1
-        else:
-                raise AssertionError(ids)
+def _make_default_node_content() -> list : return []
 
-def assign_msg_to_edge(edge_to_msg, lhs_id, rhs_id):
-        assert edge_to_msg.get((lhs_id, rhs_id)) is None
-        assert edge_to_msg.get((rhs_id, lhs_id)) is None
-        edge_to_msg[(lhs_id, rhs_id)] = len(edge_to_msg)
-        edge_to_msg[(rhs_id, lhs_id)] = len(edge_to_msg)
-
-def assign_lmbd_to_edge(edge_to_lmbd, lhs_id, rhs_id):
-        assert edge_to_lmbd.get((lhs_id, rhs_id)) is None
-        assert edge_to_lmbd.get((rhs_id, lhs_id)) is None
-        new_lmbd_position = len(edge_to_lmbd) // 2
-        edge_to_lmbd[(lhs_id, rhs_id)] = new_lmbd_position
-        edge_to_lmbd[(rhs_id, lhs_id)] = new_lmbd_position
-
-def assign_smthng_to_edge(edge_to_smthng, lhs_id, rhs_id, smthng):
-        assert edge_to_smthng.get((lhs_id, rhs_id)) is None
-        assert edge_to_smthng.get((rhs_id, lhs_id)) is None
-        edge_to_smthng[(lhs_id, rhs_id)] = smthng
-        edge_to_smthng[(rhs_id, lhs_id)] = smthng
-
-def make_default_node_content() : return []
-
-def insert_edge_to_graph(graph, lhs_id, rhs_id):
-        extend_by_defaults(graph, get_minimal_required_nodes_number(lhs_id, rhs_id), make_default_node_content)
+def _insert_edge(graph: Graph, edge_ampl: EdgeAmpl) -> Graph:
+        (lhs_id, rhs_id), _ = edge_ampl
+        min_required_nodes_number = max(lhs_id, rhs_id) + 1
+        _extend_list_by_defaults(graph, min_required_nodes_number, _make_default_node_content)
         graph[lhs_id].append(rhs_id)
         graph[rhs_id].append(lhs_id)
+        return graph
 
-def extend_nodes_by_defaults(nodes, lhs_id, rhs_id):
-        extend_by_defaults(nodes, get_minimal_required_nodes_number(lhs_id, rhs_id), lambda : 0)
+def _make_graph(edge_ampls: EdgeAmplIter) -> Graph:
+        return reduce(_insert_edge, edge_ampls, [])
 
-def make_context(backend):
-        return {"graph"      : [],
-                "edge->ampl" : {},
-                "node->ampl" : [],
-                "edge->msg"  : {},
-                "edge->lmbd" : {},
-                "msg->lmbd"  : [], 
-                "layout"     : {},
-                "backend"    : backend}
+def _get_degree_to_subgraph(graph: Graph) -> DegreeToSubGraph:
+        def insert_into_subgraph(
+                        degree_to_subgraph: DegreeToSubGraph,
+                        pair: tuple[int, list[int]]) -> DegreeToSubGraph:
+                node_id, neighbors = pair
+                degree = len(neighbors)
+                degree_to_subgraph.setdefault(degree, {})[node_id] = neighbors
+                return degree_to_subgraph
+        return reduce(insert_into_subgraph, enumerate(graph), {})
 
-def get_backend(context) : return context["backend"]
+# edge_to_ampl abstraction
 
-def get_qubits_number(context) : return len(context["node->ampl"])
+def _make_edge_to_ampl_generator(edge_ampls: EdgeAmplIter) -> EdgeAmplIter:
+        for (lhs_id, rhs_id), ampl in edge_ampls:
+                yield (lhs_id, rhs_id), ampl
+                yield (rhs_id, lhs_id), ampl
 
-def get_msgs_number(context) : return len(context["edge->msg"])
+def _make_edge_to_ampl(edge_ampls: EdgeAmplIter) -> EdgeToAmpl:
+        return dict(_make_edge_to_ampl_generator(edge_ampls))
 
-def get_lmbds_number(context) : return get_msgs_number(context) // 2
+# node_to_ampl abstraction
 
-def get_degree_layout(context) : return context["layout"]
+def _make_node_to_ampl(node_ampls: NodeAmplsIter) -> NodeToAmpl:
+        return dict(node_ampls)
 
-def insert_edge(context, edge_record):
-        (lhs_id, rhs_id), ampl = edge_record
-        assert lhs_id < rhs_id
-        insert_edge_to_graph(context["graph"], lhs_id, rhs_id)
-        extend_nodes_by_defaults(context["node->ampl"], lhs_id, rhs_id)
-        assign_smthng_to_edge(context["edge->ampl"], lhs_id, rhs_id, ampl)
-        assign_msg_to_edge(context["edge->msg"], lhs_id, rhs_id)
-        assign_lmbd_to_edge(context["edge->lmbd"], lhs_id, rhs_id)
-        return context
+# edge_to_msg_pos abstraction
 
-def insert_node(context, node_record):
-        node_id, ampl = node_record
-        min_nodes_number = get_minimal_required_nodes_number(node_id)
-        extend_by_defaults(context["graph"], min_nodes_number, make_default_node_content)
-        node_to_ampl = context["node->ampl"]
-        extend_by_defaults(node_to_ampl, min_nodes_number, lambda : 0)
-        node_to_ampl[node_id] = ampl
-        return context
+def _make_edge_to_msg_pos_generator(edge_ampls: EdgeAmplIter) -> EdgePosIter:
+        counter = 0
+        for (lhs_id, rhs_id), _ in edge_ampls:
+                yield (lhs_id, rhs_id), counter
+                yield (rhs_id, lhs_id), counter + 1
+                counter = counter + 2
 
-def insert_empty_layout_per_degree(context, degree):
-        layout = get_degree_layout(context)
-        layout[degree] = {"node_id" : [],
-                          "input_msgs" : [[] for _ in range(degree)],
-                          "output_msgs" : [[] for _ in range(degree)],
-                          "lmbds" : [[] for _ in range(degree)]}
-        return layout[degree]
+def _make_edge_to_msg_pos(edge_ampls: EdgeAmplIter) -> EdgeToPos:
+        return dict(_make_edge_to_msg_pos_generator(edge_ampls))
 
-def turn_to_tensors(context):
-        layout = get_degree_layout(context)
-        backend = get_backend(context)
-        new_layout = {k : {"node_id" : backend.from_list(v["node_id"]),
-                           "input_msgs" : list(map(backend.from_list, v["input_msgs"])),
-                           "output_msgs" : list(map(backend.from_list, v["output_msgs"])),
-                           "lmbds" : list(map(backend.from_list, v["input_msgs"]))} for k, v in layout.items()}
-        context["layout"] = new_layout
-        context["msg->lmbd"] = backend.from_list(context["msg->lmbd"])
-        return context
+# edge_to_lmbd_pos abstraction
 
-def get_or_create_degree_layout(context, degree):
-        return get_degree_layout(context).get(degree) or insert_empty_layout_per_degree(context, degree)
+def _make_edge_to_lmbd_pos_generator(edge_ampls: EdgeAmplIter) -> EdgePosIter:
+        counter = 0
+        for (lhs_id, rhs_id), _ in edge_ampls:
+                yield (lhs_id, rhs_id), counter
+                yield (rhs_id, lhs_id), counter
+                counter = counter + 1
 
-def build_layout_per_node(context, node):
-        node_id, neighbors = node
-        edge_to_msg = context["edge->msg"]
-        edge_to_lmbd = context["edge->lmbd"]
-        degree = len(neighbors)
-        degree_layout = get_or_create_degree_layout(context, degree)
-        input_msgs = map(lambda src: edge_to_msg[(src, node_id)], neighbors)
-        output_msgs = map(lambda dst: edge_to_msg[(node_id, dst)], neighbors)
-        lmbds = map(lambda other_id: edge_to_lmbd[(node_id, other_id)], neighbors)
-        degree_layout["node_id"].append(node_id)
-        for_each(append_fn, degree_layout["input_msgs"], input_msgs)
-        for_each(append_fn, degree_layout["output_msgs"], output_msgs)
-        for_each(append_fn, degree_layout["lmbds"], lmbds)
-        return context
+def _make_edge_to_lmbd_pos(edge_ampls: EdgeAmplIter) -> EdgeToPos:
+        return dict(_make_edge_to_lmbd_pos_generator(edge_ampls))
 
-def build_layout(context):
-        graph = context["graph"]
-        return reduce(build_layout_per_node, enumerate(graph), context)
+# msg_pos_to_lmbd_pos abstraction
 
-def build_msg_to_lmbd(context):
-        edge_to_msg, edge_to_lmbd = context["edge->msg"], context["edge->lmbd"]
-        assert len(edge_to_msg) == len(edge_to_lmbd)
-        def builder(acc, pair):
-                edge, msg = pair
-                acc[msg] = edge_to_lmbd[edge]
-                return acc
-        size = len(edge_to_msg)
-        context["msg->lmbd"] = reduce(builder, edge_to_msg.items(), size * [0])
-        return context
+def _doubled_numbers_generator(number: int) -> Iterable[int]:
+        for num in range(number // 2):
+                yield num
+                yield num
 
-def build_context(spec, backend):
+def _make_msgs_pos_to_lmbd_pos(edges_number: int, backend: Type[Tensor]) -> Tensor:
+        return backend.from_iter(_doubled_numbers_generator(edges_number))
 
-    def get_edges():
+# layout abstraction
+
+@dataclass
+class Layout:
+        node_ids: Tensor
+        input_msgs_pos: list[Tensor]
+        output_msgs_pos: list[Tensor]
+        lmbds_pos: list[Tensor]
+
+def _make_layout(subgraph: SubGraph,
+                 edge_to_msg_pos: EdgeToPos,
+                 edge_to_lmbd_pos: EdgeToPos,
+                 backend: Type[Tensor]) -> Layout:
+
+        def subgraph_record_to_input_msgs_pos(record: tuple[int, list[int]]) -> Iterable[int]:
+                node_id, neighbors = record
+                return map(lambda src: edge_to_msg_pos[(src, node_id)], neighbors)
+
+        def subgraph_record_to_output_msgs_pos(record: tuple[int, list[int]]) -> Iterable[int]:
+                node_id, neighbors = record
+                return map(lambda dst: edge_to_msg_pos[(node_id, dst)], neighbors)
+
+        def subgraph_record_to_lmbd_pos(record: tuple[int, list[int]]) -> Iterable[int]:
+                node_id, neighbors = record
+                return map(lambda src: edge_to_lmbd_pos[(src, node_id)], neighbors)
+
+        node_ids = map(lambda pair: pair[0], subgraph.items())
+        input_msgs_pos = map(subgraph_record_to_input_msgs_pos, subgraph.items())
+        output_msgs_pos = map(subgraph_record_to_output_msgs_pos, subgraph.items())
+        lmbds_pos = map(subgraph_record_to_lmbd_pos, subgraph.items())
+        return Layout(backend.from_list(list(node_ids)),
+                      list(map(backend.from_iter, zip(*input_msgs_pos))),
+                      list(map(backend.from_iter, zip(*output_msgs_pos))),
+                      list(map(backend.from_iter, zip(*lmbds_pos))))
+
+def _make_degree_to_layout(graph: Graph,
+                           edge_to_msg_pos: EdgeToPos,
+                           edge_to_lmbd_pos: EdgeToPos,
+                           backend: Type[Tensor]) -> dict[int, Layout]:
+        return {d : _make_layout(sg, edge_to_msg_pos, edge_to_lmbd_pos, backend)
+                for d, sg in _get_degree_to_subgraph(graph).items()}
+
+# context abstraction
+
+@dataclass
+class Context:
+        backend: Type[Tensor]
+        graph: Graph
+        edge_to_ampl: EdgeToAmpl
+        node_to_ampl: NodeToAmpl
+        edge_to_msg_pos: EdgeToPos
+        edge_to_lmbd_pos: EdgeToPos
+        msg_pos_to_lmbd_pos: Tensor
+        degree_to_layout: dict[int, Layout]
+
+        @property
+        def qubits_number(self) -> int:
+                return len(self.graph)
+
+        @property
+        def msgs_number(self) -> int:
+                return len(self.edge_to_ampl)
+
+        @property
+        def lmbds_number(self) -> int:
+                return self.msgs_number // 2
+
+def build_context(spec: dict, backend: Type[Tensor]):
+
+    def get_edges() -> EdgeAmplIter:
         for (lhs_id, rhs_id), ampl in filter(lambda key_val: isinstance(key_val[0], tuple), spec.items()):
                 if (rhs_id, lhs_id) in spec:
                         raise ValueError(f"Edge connecting {lhs_id} and {rhs_id} is duplicated")
                 yield (min(lhs_id, rhs_id), max(lhs_id, rhs_id)), ampl
 
-    def get_nodes():
+    def get_nodes() -> NodeAmplsIter:
         return filter(lambda key_val: isinstance(key_val[0], int), spec.items())
 
-    def insert_edges(context):
-        return reduce(insert_edge, get_edges(), context)
-
-    def insert_nodes(context):
-        return reduce(insert_node, get_nodes(), context)
-
-    return run_pipeline(
-            make_context(backend),
-            insert_edges,
-            insert_nodes,
-            build_layout,
-            build_msg_to_lmbd,
-            turn_to_tensors)
+    graph = _make_graph(get_edges())
+    edge_to_ampl = _make_edge_to_ampl(get_edges())
+    node_to_ampl = _make_node_to_ampl(get_nodes())
+    edge_to_msg_pos = _make_edge_to_msg_pos(get_edges())
+    edge_to_lmbd_pos = _make_edge_to_lmbd_pos(get_edges())
+    msg_pos_to_lmbd_pos = _make_msgs_pos_to_lmbd_pos(len(edge_to_ampl), backend)
+    degree_to_layout = _make_degree_to_layout(graph, edge_to_msg_pos, edge_to_lmbd_pos, backend)
+    return Context(backend,
+                   graph,
+                   edge_to_ampl,
+                   node_to_ampl,
+                   edge_to_msg_pos,
+                   edge_to_lmbd_pos,
+                   msg_pos_to_lmbd_pos,
+                   degree_to_layout)
 
