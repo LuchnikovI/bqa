@@ -1,8 +1,8 @@
 from functools import reduce
 from typing import Any
 from bqa.config_syntax.schedule_syntax import DEFAULT_SCHEDULE, analyse_schedule
-from bqa.config_syntax.utils import (ConfigSyntaxError, analyse_float, analyse_non_neg_float,
-                                     analyse_non_neg_int, analyse_positive_int, get_default_and_warn,
+from bqa.config_syntax.utils import (ConfigSyntaxError, analyse_number, analyse_non_neg_number,
+                                     analyse_non_neg_int, analyse_positive_int, ok_or_default_and_warn,
                                      unwrap_or)
 
 # types
@@ -48,7 +48,7 @@ def add_analyse_node(nodes: Nodes, node) -> Nodes:
     if isinstance(node, (tuple, list)) and len(node) == 2:
         try:
             node_id = analyse_non_neg_int(node[0])
-            field = analyse_float(node[1])
+            field = analyse_number(node[1])
             if node_id in nodes:
                 raise ConfigSyntaxError(f"Duplicated node ID {node_id}")
             else:
@@ -88,7 +88,7 @@ def add_analyse_edge(edges: Edges, edge) -> Edges:
     if isinstance(edge, (tuple, list)) and len(edge) == 2:
         try:
             (lhs, rhs) = analyse_edge_id(edge[0])
-            coupling = analyse_float(edge[1])
+            coupling = analyse_number(edge[1])
             if (lhs, rhs) in edges or (rhs, lhs) in edges:
                 raise ConfigSyntaxError(f"Duplicated edge ID {(lhs, rhs)}, {(rhs, lhs)}")
             else:
@@ -110,38 +110,66 @@ def analyse_edges(edges) -> Edges:
     else:
         raise ConfigSyntaxError(f"Invalid edges {edges}")
 
+def get_field_or_default_and_warn(config: dict, field: str, default, msg: str):
+    return ok_or_default_and_warn(
+        config.get(field),
+        default,
+        msg
+    )
+
 def analyse_config(config) -> Config:
     if isinstance(config, dict):
         try:
-            nodes = config.get("nodes") \
-                or get_default_and_warn(DEFAULT_NODES, \
-                f"`nodes` field is missing in config, set to {DEFAULT_NODES}")
+            nodes = get_field_or_default_and_warn(
+                config,
+                "nodes",
+                DEFAULT_NODES,
+                f"`nodes` field is missing in config, set to {DEFAULT_NODES}",
+            )
             edges = unwrap_or(config.get("edges"), "`edges` field is missing")
-            schedule = config.get("schedule") \
-                or get_default_and_warn(DEFAULT_SCHEDULE, \
-                f"`schedule` field is missing, set to {DEFAULT_SCHEDULE}")
-            max_bond_dim = config.get("max_bond_dim") \
-                or get_default_and_warn(DEFAULT_MAX_BOND_DIM, \
-                f"`max_bond_dim` filed is missing, set to {DEFAULT_MAX_BOND_DIM}")
-            max_bp_iters_number = config.get("max_bp_iters_number") \
-                or get_default_and_warn(DEFAULT_MAX_BP_ITERS_NUMBER , \
-                f"`max_bp_iters_number` field is missing, set to {DEFAULT_MAX_BP_ITERS_NUMBER}")
-            bp_eps = config.get("bp_eps") \
-                or get_default_and_warn(DEFAULT_BP_EPS, \
-                f"`bp_eps` field is missing, set to {DEFAULT_BP_EPS}")
-            backend = config.get("backend") \
-                or get_default_and_warn(DEFAULT_BACKEND, \
-                f"`backend` field is missing, set to {DEFAULT_BACKEND}")
-            default_field = config.get("default_field") \
-                or get_default_and_warn(DEFAULT_DEFAULT_FIELD, \
-                f"`default_field` field is missing, set to  {DEFAULT_DEFAULT_FIELD}")
+            schedule = get_field_or_default_and_warn(
+                config,
+                "schedule",
+                DEFAULT_SCHEDULE,
+                f"`schedule` field is missing, set to {DEFAULT_SCHEDULE}",
+            )
+            max_bond_dim = get_field_or_default_and_warn(
+                config,
+                "max_bond_dim",
+                DEFAULT_MAX_BOND_DIM,
+                f"`max_bond_dim` field is missing, set to {DEFAULT_MAX_BOND_DIM}",
+            )
+            max_bp_iters_number = get_field_or_default_and_warn(
+                config,
+                "max_bp_iters_number",
+                DEFAULT_MAX_BP_ITERS_NUMBER,
+                f"`max_bp_iters_number` field is missing, set to {DEFAULT_MAX_BP_ITERS_NUMBER}",
+            )
+            bp_eps = get_field_or_default_and_warn(
+                config,
+                "bp_eps",
+                DEFAULT_BP_EPS,
+                f"`bp_eps` field is missing, set to {DEFAULT_BP_EPS}",
+            )
+            backend = get_field_or_default_and_warn(
+                config,
+                "backend",
+                DEFAULT_BACKEND,
+                f"`backend` field is missing, set to {DEFAULT_BACKEND}",
+            )
+            default_field = get_field_or_default_and_warn(
+                config,
+                "default_field",
+                DEFAULT_DEFAULT_FIELD,
+                f"`default_field` field is missing, set to  {DEFAULT_DEFAULT_FIELD}",
+            )
             return {"nodes" : analyse_nodes(nodes),
                     "edges" : analyse_edges(edges),
-                    "default_field" : analyse_float(default_field),
+                    "default_field" : analyse_number(default_field),
                     "schedule" : analyse_schedule(schedule),
                     "max_bond_dim" : analyse_positive_int(max_bond_dim),
                     "max_bp_iters_number" : analyse_non_neg_int(max_bp_iters_number),
-                    "bp_eps" : analyse_non_neg_float(bp_eps),
+                    "bp_eps" : analyse_non_neg_number(bp_eps),
                     "backend" : analyse_backend(backend)}
         except ConfigSyntaxError as e:
             raise ConfigSyntaxError(f"Invalid config {config}") from e
