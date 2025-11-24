@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from functools import reduce
 from typing import Type, TypeVar
-
+from numpy import array_equal
 from bqa.backends import NumPyBackend, Tensor
 from bqa.config.config_syntax import Config, EdgeToAmpl, NodeToAmpl, Edge
 from bqa.config.schedule_canonicalization import Instruction, _canonicalize_schedule
@@ -12,7 +12,7 @@ T2 = TypeVar("T2")
 
 Graph = list[list[int]]
 
-DictLayout = dict # dict[str, list[list[int]] | list[int]]
+DictLayout = dict  # dict[str, list[list[int]] | list[int]]
 
 EdgeToPosition = dict[Edge, int]
 
@@ -26,17 +26,51 @@ class Layout:
     output_msgs_position: list[Tensor]
     lmbds_position: list[Tensor]
 
+    def __eq__(
+        self, value: object, /
+    ) -> bool:  # needed only for testing, numpy conversion is ok
+        if isinstance(value, Layout):
+            return (
+                array_equal(self.node_ids.numpy, value.node_ids.numpy)
+                and len(self.input_msgs_position) == len(value.input_msgs_position)
+                and all(
+                    map(
+                        lambda lhs, rhs: array_equal(lhs.numpy, rhs.numpy),
+                        self.input_msgs_position,
+                        value.input_msgs_position,
+                    )
+                )
+                and len(self.output_msgs_position) == len(value.output_msgs_position)
+                and all(
+                    map(
+                        lambda lhs, rhs: array_equal(lhs.numpy, rhs.numpy),
+                        self.output_msgs_position,
+                        value.output_msgs_position,
+                    )
+                )
+                and len(self.lmbds_position) == len(value.lmbds_position)
+                and all(
+                    map(
+                        lambda lhs, rhs: array_equal(lhs.numpy, rhs.numpy),
+                        self.lmbds_position,
+                        value.lmbds_position,
+                    )
+                )
+            )
+        else:
+            return False
+
 
 def _make_degree_to_layout(
     graph: Graph,
     edge_to_msg_position: EdgeToPosition,
     edge_to_lmbd_position: EdgeToPosition,
-    backend: Type[Tensor]
+    backend: Type[Tensor],
 ) -> dict[int, Layout]:
 
     def get_input_msg_position(graph_record: tuple[int, list[int]]) -> list[int]:
         dst_id, src_ids = graph_record
-        return list(map(lambda src_id: edge_to_msg_position[(dst_id, src_id)], src_ids))
+        return list(map(lambda src_id: edge_to_msg_position[(src_id, dst_id)], src_ids))
 
     def get_output_msg_position(graph_record: tuple[int, list[int]]) -> list[int]:
         src_id, dst_ids = graph_record
@@ -44,7 +78,9 @@ def _make_degree_to_layout(
 
     def get_lmbds_position(graph_record: tuple[int, list[int]]) -> list[int]:
         dst_id, src_ids = graph_record
-        return list(map(lambda src_id: edge_to_lmbd_position[(dst_id, src_id)], src_ids))
+        return list(
+            map(lambda src_id: edge_to_lmbd_position[(dst_id, src_id)], src_ids)
+        )
 
     def get_degree(graph_record: tuple[int, list[int]]) -> int:
         _, neighbor_ids = graph_record
@@ -53,27 +89,38 @@ def _make_degree_to_layout(
     def get_or_default(layouts: dict[int, DictLayout], degree: int) -> DictLayout:
         layout = layouts.get(degree)
         if layout is None:
-            layouts[degree] = {"node_ids" : [],
-                               "input_msgs_position" : [],
-                               "output_msgs_position" : [],
-                               "lmbds_position" : []}
+            layouts[degree] = {
+                "node_ids": [],
+                "input_msgs_position": [],
+                "output_msgs_position": [],
+                "lmbds_position": [],
+            }
             return layouts[degree]
         else:
             return layout
 
     def add_dict_layout_per_degree(
-            dict_layouts: dict[int, DictLayout],
-            graph_record: tuple[int, list[int]]) -> dict[int, DictLayout]:
+        dict_layouts: dict[int, DictLayout], graph_record: tuple[int, list[int]]
+    ) -> dict[int, DictLayout]:
         degree = get_degree(graph_record)
         dict_layout = get_or_default(dict_layouts, degree)
         dict_layout["node_ids"].append(graph_record[0])
         dict_layout["input_msgs_position"].append(get_input_msg_position(graph_record))
-        dict_layout["output_msgs_position"].append(get_output_msg_position(graph_record))
+        dict_layout["output_msgs_position"].append(
+            get_output_msg_position(graph_record)
+        )
         dict_layout["lmbds_position"].append(get_lmbds_position(graph_record))
         return dict_layouts
 
     def tensorize(list_of_positions: list[list[int]], degree: int) -> list[Tensor]:
-        return list(map(lambda i: backend.from_iter(map(lambda positions: positions[i], list_of_positions)), range(degree)))
+        return list(
+            map(
+                lambda i: backend.from_iter(
+                    map(lambda positions: positions[i], list_of_positions)
+                ),
+                range(degree),
+            )
+        )
 
     def dict_to_layout(dict_layout: DictLayout, degree: int) -> Layout:
         return Layout(
@@ -83,9 +130,12 @@ def _make_degree_to_layout(
             tensorize(dict_layout["lmbds_position"], degree),
         )
 
-    return {degree : dict_to_layout(dict_layout, degree) \
-            for degree, dict_layout \
-            in reduce(add_dict_layout_per_degree, enumerate(graph), {}).items()}
+    return {
+        degree: dict_to_layout(dict_layout, degree)
+        for degree, dict_layout in reduce(
+            add_dict_layout_per_degree, enumerate(graph), {}
+        ).items()
+    }
 
 
 @dataclass
@@ -95,8 +145,11 @@ class Context:
     edge_to_ampl: EdgeToAmpl
     node_to_ampl: NodeToAmpl
     default_field: float
+    bp_eps: float
     nodes_number: int
     edges_number: int
+    max_bond_dim: int
+    max_bp_iters_number: int
     edge_to_msg_position: EdgeToPosition
     edge_to_lmbd_position: EdgeToPosition
     msg_pos_to_lmbd_pos: Tensor
@@ -106,7 +159,7 @@ class Context:
 
 def _get_nodes_number(config: Config) -> int:
     return 1 + max(
-        max(config["nodes"].keys(), default = -1),
+        max(config["nodes"].keys(), default=-1),
         max(map(lambda edge: max(edge[0], edge[1]), config["edges"].keys())),
     )
 
@@ -148,18 +201,25 @@ def _canonicalize_config(config: Config) -> Context:
     graph = _make_graph(config, nodes_number)
     edge_to_msg_position = _make_edge_to_msg_position(config)
     edge_to_lmbd_position = _make_edge_to_lmbd_position(config)
-    msg_position_to_lmbd_position = _make_msg_position_to_lmbd_position(edges_number, backend)
+    msg_position_to_lmbd_position = _make_msg_position_to_lmbd_position(
+        edges_number, backend
+    )
     return Context(
         backend,
         graph,
         config["edges"],
         config["nodes"],
         config["default_field"],
+        config["bp_eps"],
         nodes_number,
         edges_number,
+        config["max_bond_dim"],
+        config["max_bp_iters_number"],
         edge_to_msg_position,
         edge_to_lmbd_position,
         msg_position_to_lmbd_position,
-        _make_degree_to_layout(graph, edge_to_msg_position, edge_to_lmbd_position, backend),
-        list(_canonicalize_schedule(config["schedule"]))
+        _make_degree_to_layout(
+            graph, edge_to_msg_position, edge_to_lmbd_position, backend
+        ),
+        list(_canonicalize_schedule(config["schedule"])),
     )
