@@ -66,6 +66,14 @@ def _analyse_0_to_1_number(value) -> float:
     )
     return float(number)
 
+def _analyse_half_to_1_number(value) -> float:
+    number = _analyse_atomic_value(
+        lambda x: isinstance(x, (float, int)) and x >= 0.5 and x <= 1.0,
+        value,
+        "must be a `float` or `int` number from [0.5, 1]",
+    )
+    return float(number)
+
 
 def _analyse_non_neg_int(value) -> int:
     return _analyse_atomic_value(

@@ -41,7 +41,7 @@ DEFAULT_LINEAR_SCALING = {
 
 DEFAULT_ACTIONS = [
     DEFAULT_LINEAR_SCALING,
-    "get_observables",
+    "get_density_matrices",
 ]
 
 DEFAULT_SCHEDULE = {
@@ -76,7 +76,7 @@ def _analyse_action(action) -> Action:
             return _analyse_linear_scaling(action)
         except ConfigSyntaxError as e:
             raise ConfigSyntaxError(f"Invalid linear scaling {action}") from e
-    elif action == "get_observables" or action == "measure":
+    elif action == "get_density_matrices" or action == "measure":
         return action
     else:
         raise ConfigSyntaxError(f"Unknown action {action}")

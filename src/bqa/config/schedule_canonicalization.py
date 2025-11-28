@@ -32,7 +32,7 @@ def _canonicalize_action(
         assert isinstance(steps_number, int)
         time_step = total_time * action["time"] / steps_number
         yield from map(
-            lambda p: {"xtime": p * time_step, "ytime": (1.0 - p) * time_step},
+            lambda p: {"xtime": p * time_step, "ztime": (1.0 - p) * time_step},
             _interpolate_linearly(starting_mixing, final_mixing, steps_number),
         )
     else:

@@ -1,7 +1,9 @@
 from dataclasses import dataclass
 from functools import reduce
+from itertools import islice
 from typing import Type, TypeVar
 from numpy import array_equal
+from numpy.random import Generator, default_rng
 from bqa.backends import NumPyBackend, Tensor
 from bqa.config.config_syntax import Config, EdgeToAmpl, NodeToAmpl, Edge
 from bqa.config.schedule_canonicalization import Instruction, _canonicalize_schedule
@@ -146,15 +148,22 @@ class Context:
     node_to_ampl: NodeToAmpl
     default_field: float
     bp_eps: float
+    measurement_threshold: float
     nodes_number: int
     edges_number: int
     max_bond_dim: int
     max_bp_iters_number: int
+    numpy_rng: Generator
     edge_to_msg_position: EdgeToPosition
     edge_to_lmbd_position: EdgeToPosition
+    lmbd_aligned_ampls: Tensor
     msg_pos_to_lmbd_pos: Tensor
     degree_to_layout: dict[int, Layout]
     instructions: list[Instruction]
+
+    @property
+    def lmbds_number(self) -> int:
+        return self.edges_number // 2
 
 
 def _get_nodes_number(config: Config) -> int:
@@ -181,18 +190,26 @@ def _make_edge_to_msg_position(config: Config) -> EdgeToPosition:
     return dict(map(lambda kv: (kv[1], kv[0]), enumerate(config["edges"].keys())))
 
 
-# this works because .keys() iterates in insertion order
-# and we insert edges such that (lhs, rhs) followed by (rhs, lhs) always
+# this relies on order of edges in a dict
 def _make_edge_to_lmbd_position(config: Config) -> EdgeToPosition:
-    return dict(map(lambda kv: (kv[1], kv[0] // 2), enumerate(config["edges"].keys())))
+    lmbds_number = len(config["edges"]) // 2
+    return dict(map(lambda kv: (kv[1], kv[0] % lmbds_number), enumerate(config["edges"].keys())))
 
-
+# this relies on order of edges in a dict
 def _make_msg_position_to_lmbd_position(
     edges_number: int,
     backend: Type[Tensor],
 ) -> Tensor:
-    return backend.from_iter(map(lambda x: x // 2, range(edges_number)))
+    lmbds_number = edges_number // 2
+    return backend.from_iter(map(lambda x: x % lmbds_number, range(edges_number)))
 
+# this relies on order of edges in a dict
+def _make_lmbd_aligned_amplitudes(
+        edge_to_ampl: EdgeToAmpl,
+        backend: Type[Tensor],
+) -> Tensor:
+    lmbds_number = len(edge_to_ampl) // 2
+    return backend.from_iter(islice(edge_to_ampl.values(), lmbds_number))
 
 def _canonicalize_config(config: Config) -> Context:
     nodes_number = _get_nodes_number(config)
@@ -211,12 +228,15 @@ def _canonicalize_config(config: Config) -> Context:
         config["nodes"],
         config["default_field"],
         config["bp_eps"],
+        config["measurement_threshold"],
         nodes_number,
         edges_number,
         config["max_bond_dim"],
         config["max_bp_iters_number"],
+        default_rng(config["seed"]),
         edge_to_msg_position,
         edge_to_lmbd_position,
+        _make_lmbd_aligned_amplitudes(config["edges"], backend),
         msg_position_to_lmbd_position,
         _make_degree_to_layout(
             graph, edge_to_msg_position, edge_to_lmbd_position, backend
