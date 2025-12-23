@@ -1,38 +1,29 @@
-from functools import reduce
 import logging
-from typing import Any, Callable
+from numpy.typing import NDArray
 from bqa.config.core import config_to_context
-from bqa.config.schedule_canonicalization import Instruction
-from bqa.state import State, _get_density_matrices, _initialize_state, measure, run_layer
+from bqa.state import get_density_matrices, _initialize_state, measure, run_layer
 
 log = logging.getLogger(__name__)
+
 
 def run_qa(config) -> list:
     context = config_to_context(config)
     instructions_number = len(context.instructions)
+    state = _initialize_state(context)
 
-    def execute_instruction(acc: dict, instruction_number_and_instruction: tuple[int, Instruction]) -> dict:
-        instruction_number, instruction = instruction_number_and_instruction
+    def execute_instruction(
+            instruction_number: int,
+            instruction: str | dict,
+    ) -> None | list | NDArray:
         log.info(f"Instruction number {instruction_number} / {instructions_number} started")
-
-        def apply_func_to_state(func: Callable[[State], Any], acc: dict) -> dict:
-            output = func(acc["state"])
-            if output is not None:
-                acc["outputs"].append(output)
-            return acc
-
         if isinstance(instruction, dict):
-            return apply_func_to_state(lambda state: run_layer(context, instruction["xtime"], instruction["ztime"], state), acc)
+            return run_layer(context, instruction["xtime"], instruction["ztime"], state)
         elif instruction == "measure":
-            return apply_func_to_state(lambda state: measure(context, state), acc)
+            return measure(context, state)
         elif instruction == "get_density_matrices":
-            return apply_func_to_state(lambda state: _get_density_matrices(context, state), acc)
+            return get_density_matrices(context, state)
         else:
             raise ValueError(f"Unknown instruction {instruction}")
+    instr_exec_iter = (execute_instruction(instr_num, instr) for instr_num, instr in enumerate(context.instructions))
+    return list(filter(lambda x: x is not None, instr_exec_iter))
 
-    def extract_outputs(acc: dict) -> list:
-        return acc["outputs"]
-
-    acc = {"state" : _initialize_state(context), "outputs" : []}
-
-    return extract_outputs(reduce(execute_instruction, enumerate(context.instructions), acc))

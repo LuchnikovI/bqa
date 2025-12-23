@@ -8,6 +8,7 @@ from bqa.config.utils import (
     _analyse_non_neg_int,
     _analyse_positive_int,
     _analyse_half_to_1_number,
+    _analyse_0_to_1_number,
     _ok_or_default_and_warn,
     _unwrap_or,
 )
@@ -32,6 +33,8 @@ DEFAULT_MAX_BP_ITERS_NUMBER = 100
 
 DEFAULT_BP_EPS = 1e-5
 
+DEFAULT_PINV_EPS = 1e-5
+
 DEFAULT_BACKEND = "numpy"
 
 DEFAULT_DEFAULT_FIELD = 0.0
@@ -43,6 +46,7 @@ DEFAULT_SEED = 42
 # syntax analysis
 
 BACKENDS = {"numpy"}
+
 
 def _analyse_backend(backend) -> str:
     if isinstance(backend, str):
@@ -97,14 +101,20 @@ def _analyse_edge_id(edge_id) -> tuple[int, int]:
         raise ConfigSyntaxError(f"Invalid edge ID {edge_id}")
 
 
-def _add_analyse_edge(edges: tuple[EdgeToAmpl, EdgeToAmpl], edge) -> tuple[EdgeToAmpl, EdgeToAmpl]:
+def _add_analyse_edge(
+    edges: tuple[EdgeToAmpl, EdgeToAmpl], edge
+) -> tuple[EdgeToAmpl, EdgeToAmpl]:
     forward_edges, backward_edges = edges
     if isinstance(edge, (tuple, list)) and len(edge) == 2:
         try:
             lhs, rhs = _analyse_edge_id(edge[0])
             coupling = _analyse_number(edge[1])
-            if (lhs, rhs) in forward_edges or (rhs, lhs) in forward_edges \
-               or (lhs, rhs) in backward_edges or (rhs, lhs) in backward_edges:
+            if (
+                (lhs, rhs) in forward_edges
+                or (rhs, lhs) in forward_edges
+                or (lhs, rhs) in backward_edges
+                or (rhs, lhs) in backward_edges
+            ):
                 raise ConfigSyntaxError(
                     f"Duplicated edge ID {(lhs, rhs)}, {(rhs, lhs)}"
                 )
@@ -123,7 +133,9 @@ def _analyse_edges(edges) -> EdgeToAmpl:
         try:
             edges_iter = edges.items() if isinstance(edges, dict) else edges
             # order of edges is important, one relies on it
-            forward_edges, backward_edges = reduce(_add_analyse_edge, edges_iter, ({}, {}))
+            forward_edges, backward_edges = reduce(
+                _add_analyse_edge, edges_iter, ({}, {})
+            )
             return forward_edges | backward_edges
         except ConfigSyntaxError as e:
             raise ConfigSyntaxError(f"Invalid edges {edges}") from e
@@ -169,6 +181,12 @@ def _analyse_config(config) -> Config:
                 DEFAULT_BP_EPS,
                 f"`bp_eps` field is missing, set to {DEFAULT_BP_EPS}",
             )
+            pinv_eps = _get_field_or_default_and_warn(
+                config,
+                "pinv_eps",
+                DEFAULT_PINV_EPS,
+                f"`pinv_eps` fileld is missing, set to {DEFAULT_PINV_EPS}",
+            )
             backend = _get_field_or_default_and_warn(
                 config,
                 "backend",
@@ -185,13 +203,13 @@ def _analyse_config(config) -> Config:
                 config,
                 "measurement_threshold",
                 DEFAULT_MEASUREMENT_THRESHOLD,
-                f"`measurement_threshold` field is missing, set to {DEFAULT_MEASUREMENT_THRESHOLD}"
+                f"`measurement_threshold` field is missing, set to {DEFAULT_MEASUREMENT_THRESHOLD}",
             )
             seed = _get_field_or_default_and_warn(
                 config,
                 "seed",
                 DEFAULT_SEED,
-                f"`seed` field is missing, set to {DEFAULT_SEED}"
+                f"`seed` field is missing, set to {DEFAULT_SEED}",
             )
             return {
                 "nodes": _analyse_nodes(nodes),
@@ -200,9 +218,12 @@ def _analyse_config(config) -> Config:
                 "schedule": _analyse_schedule(schedule),
                 "max_bond_dim": _analyse_positive_int(max_bond_dim),
                 "max_bp_iters_number": _analyse_non_neg_int(max_bp_iters_number),
-                "seed" : _analyse_non_neg_int(seed),
+                "seed": _analyse_non_neg_int(seed),
                 "bp_eps": _analyse_non_neg_number(bp_eps),
-                "measurement_threshold" : _analyse_half_to_1_number(measurement_threshold),
+                "pinv_eps": _analyse_0_to_1_number(pinv_eps),
+                "measurement_threshold": _analyse_half_to_1_number(
+                    measurement_threshold
+                ),
                 "backend": _analyse_backend(backend),
             }
         except ConfigSyntaxError as e:

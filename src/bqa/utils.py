@@ -1,17 +1,10 @@
 from os import environ
-from functools import lru_cache, reduce
-from typing import TypeVar, Callable
+from functools import lru_cache
+from typing import TypeVar
+from numpy import complex64, complex128
 
 T = TypeVar("T")
-U = TypeVar("U")
-K = TypeVar("K")
 
-
-def dict_map(func: Callable[[K, T], U], dct: dict[K, T]) -> dict[K, U]:
-    return {k : func(k, v) for k, v in dct.items()}
-
-def dict_reduce(func: Callable[[U, K, T], U], dct: dict[K, T], init: U) -> U:
-    return reduce(lambda acc, pair: func(acc, pair[0], pair[1]), dct.items(), init)
 
 @lru_cache(None)
 def dispatch_precision(single: T, double: T) -> T:
@@ -21,4 +14,9 @@ def dispatch_precision(single: T, double: T) -> T:
     elif precision == "double":
         return double
     else:
-        raise ValueError(f"Unknown value of BQA_PRECISION environment variable {precision}")
+        raise ValueError(
+            f"Unknown value of BQA_PRECISION environment variable {precision}"
+        )
+
+
+NP_DTYPE = dispatch_precision(complex64, complex128)

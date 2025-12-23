@@ -7,7 +7,6 @@ from bqa.backends import NumPyBackend
 from bqa.config.core import config_to_context
 from bqa.config.config_canonicalization import Layout
 from bqa.config.schedule_canonicalization import Instruction
-from bqa.utils import dispatch_precision
 
 logging.basicConfig(
     level=logging.ERROR,
@@ -59,84 +58,18 @@ def test_config_to_context():
             },
         },
     )
-    assert isclose(context.default_field, -0.5)
     assert context.edges_number == 12
     assert context.nodes_number == 7
     assert context.max_bp_iters_number == 100
     assert isclose(context.bp_eps, 1e-5)
     assert context.max_bond_dim == 4
-    assert_isclose_numeric_dicts_order_sensetive(
-        context.node_to_ampl, {2: 1, 6: -1.1}
-    )  # insertion order taken into account
-    assert_isclose_numeric_dicts_order_sensetive(
-        context.edge_to_ampl,
-        {
-            (0, 2): 1.0,
-            (1, 0): -1.0,
-            (3, 0): 0.1,
-            (2, 4): 1.1,
-            (1, 4): 0.0,
-            (3, 1): 1.0,
-            (2, 0): 1.0,
-            (0, 1): -1.0,
-            (0, 3): 0.1,
-            (4, 2): 1.1,
-            (4, 1): 0.0,
-            (1, 3): 1.0,
-        },
-    )  # insertion order taken into account
-    assert context.graph == [
-        [2, 1, 3],
-        [0, 4, 3],
-        [4, 0],
-        [0, 1],
-        [2, 1],
-        [],
-        [],
-    ]  # insertion order taken into account
-    assert all(
-        context.msg_pos_to_lmbd_pos.raw_tensor
-        == np.array([0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5], dtype=np.intp)
-    )
-    assert_isclose_numeric_dicts_order_sensetive(
-        context.edge_to_msg_position,
-        {
-            (0, 2): 0,
-            (1, 0): 1,
-            (3, 0): 2,
-            (2, 4): 3,
-            (1, 4): 4,
-            (3, 1): 5,
-            (2, 0): 6,
-            (0, 1): 7,
-            (0, 3): 8,
-            (4, 2): 9,
-            (4, 1): 10,
-            (1, 3): 11,
-        },
-    )  # insertion order taken into account
-    assert_isclose_numeric_dicts_order_sensetive(
-        context.edge_to_lmbd_position,
-        {
-            (0, 2): 0,
-            (1, 0): 1,
-            (3, 0): 2,
-            (2, 4): 3,
-            (1, 4): 4,
-            (3, 1): 5,
-            (2, 0): 0,
-            (0, 1): 1,
-            (0, 3): 2,
-            (4, 2): 3,
-            (4, 1): 4,
-            (1, 3): 5,
-        },
-    )  # insertion order taken into account
     assert len(context.degree_to_layout) == 3
     assert context.degree_to_layout[0] == Layout(
         NumPyBackend(np.array([5, 6], dtype=np.intp)),
         [],
         [],
+        [],
+        NumPyBackend(np.array([-0.5, -1.1])),
         [],
     )
     assert context.degree_to_layout[2] == Layout(
@@ -153,6 +86,11 @@ def test_config_to_context():
             NumPyBackend(np.array([3, 2, 3], dtype=np.intp)),
             NumPyBackend(np.array([0, 5, 4], dtype=np.intp)),
         ],
+        NumPyBackend(np.array([1., -0.5, -0.5])),
+        [
+            NumPyBackend(np.array([1.1, 0.1, 1.1])),
+            NumPyBackend(np.array([1., 1., 0.])),
+        ]
     )
     assert context.degree_to_layout[3] == Layout(
         NumPyBackend(np.array([0, 1], dtype=np.intp)),
@@ -171,11 +109,13 @@ def test_config_to_context():
             NumPyBackend(np.array([1, 4], dtype=np.intp)),
             NumPyBackend(np.array([2, 5], dtype=np.intp)),
         ],
+        NumPyBackend(np.array([-0.5, -0.5])),
+        [
+            NumPyBackend(np.array([1., -1.])),
+            NumPyBackend(np.array([-1., 0.])),
+            NumPyBackend(np.array([0.1, 1.])),
+        ],
     )
-    assert np.isclose(
-        np.array([1.0, -1.0, 0.1, 1.1, 0.0, 1.0], dispatch_precision(np.complex64, np.complex128)),
-        context.lmbd_aligned_ampls.numpy
-    ).all()
     total_time = sum(
         map(
             sum_x_and_y_times,
@@ -219,4 +159,7 @@ def test_config_to_context():
     )
     assert all(map(lambda x: isclose(x, first_part_diffs[0]), first_part_diffs))
     assert all(map(lambda x: isclose(x, second_part_diffs[0]), second_part_diffs))
+    for node_id, (degree, pos) in context.path_to_tensors.items():
+        assert context.degree_to_layout[degree].node_ids.numpy[pos] == node_id
     print("Test `config_to_context`: OK")
+

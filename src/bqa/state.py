@@ -1,171 +1,260 @@
 from dataclasses import dataclass
 import logging
 import numpy as np
-from functools import reduce
-from typing import Iterable
-from numpy.random import Generator
+from typing import Iterator
+from numpy.random import Generator, default_rng
 from numpy.typing import NDArray
 from bqa.backends import Tensor
 from bqa.config.config_canonicalization import Context
 from bqa.config.config_canonicalization import Layout
-from bqa.utils import dict_reduce, dispatch_precision, dict_map
+from bqa.utils import NP_DTYPE
+
+# for efficiency reasons this code is highly imperative,
+# one can think of it as a virtual machine for quantum
+# annealing execution
 
 log = logging.getLogger(__name__)
 
 # state initialization
 
+INITIAL_STATE = np.array([np.sqrt(0.5), -np.sqrt(0.5)], NP_DTYPE)
+
+# this is being mutated in many places
 @dataclass
 class State:
+    rng: Generator
     degree_to_tensor: dict[int, Tensor]
     msgs: Tensor
     lmbds: Tensor
+
+    @property
+    def bond_dim(self) -> int:
+        return next(iter(self.degree_to_tensor.items()))[1].batch_shape[-1]
+
 
 def _make_batch(arr: NDArray, batch_size: int) -> NDArray:
     shape = arr.shape
     return np.broadcast_to(arr, (batch_size, *shape))
 
+
 def _make_initial_degree_to_tensor(context: Context) -> dict[int, Tensor]:
-    dtype = dispatch_precision(np.complex64, np.complex128)
     backend = context.backend
-    local_state = np.array([np.sqrt(0.5), -np.sqrt(0.5)], dtype)
 
     def get_initial_tensors_batch(degree: int, layout: Layout) -> Tensor:
         shape = (2,) + (1,) * degree
         batch_size = layout.node_ids.batch_size
-        single_tensor = local_state.reshape(shape)
-        return backend.from_numpy(_make_batch(single_tensor, batch_size))
+        single_tensor = INITIAL_STATE.reshape(shape)
+        return backend.make_from_numpy(_make_batch(single_tensor, batch_size))
 
-    return dict_map(get_initial_tensors_batch, context.degree_to_layout)
+    return {
+        degree: get_initial_tensors_batch(degree, layout)
+        for degree, layout in context.degree_to_layout.items()
+    }
+
 
 def _make_msgs_from_lmbds(lmbds: Tensor, context: Context) -> Tensor:
     return lmbds.batch_slice(context.msg_pos_to_lmbd_pos).batch_normalize().batch_diag()
 
+
 def _make_initial_lmbds(context: Context) -> Tensor:
-    dtype = dispatch_precision(np.complex64, np.complex128)
     backend = context.backend
     lmbds_number = context.lmbds_number
-    ones_bacthed = _make_batch(np.ones((1,), dtype), lmbds_number)
-    return backend.from_numpy(ones_bacthed)
+    ones_bacthed = _make_batch(np.ones((1,), NP_DTYPE), lmbds_number)
+    return backend.make_from_numpy(ones_bacthed)
+
 
 def _initialize_state(context: Context) -> State:
     lmbds = _make_initial_lmbds(context)
-    return State(_make_initial_degree_to_tensor(context),
-                 _make_msgs_from_lmbds(lmbds, context),
-                 lmbds)
+    return State(
+        default_rng(context.seed),
+        _make_initial_degree_to_tensor(context),
+        _make_msgs_from_lmbds(lmbds, context),
+        lmbds,
+    )
+
 
 # density matrices
 
-def _get_density_matrices(context: Context, state: State) -> NDArray:
 
-    def get_tensors_aligned_input_msgs(layout: Layout) -> tuple[Tensor, ...]:
-        return tuple(map(lambda idx: state.msgs.batch_slice(idx), layout.input_msgs_position))
+def get_density_matrices(context: Context, state: State) -> NDArray:
+    density_matrices = np.empty((context.nodes_number, 2, 2), NP_DTYPE)
 
-    def add_density_matrices_for_degree(dms: NDArray, degree: int, layout: Layout) -> NDArray:
-        input_msgs = get_tensors_aligned_input_msgs(layout)
-        tensors = state.degree_to_tensor[degree]
-        src = tensors.get_density_matrices(input_msgs).numpy
-        node_ids_np = layout.node_ids.numpy
-        dms[node_ids_np] = src
-        return dms
+    def set_densities(node_ids: NDArray, src_density: NDArray) -> None:
+        density_matrices[node_ids] = src_density
 
-    dtype = dispatch_precision(np.complex64, np.complex128)
-    density_matrices = np.empty((context.nodes_number, 2, 2), dtype)
-    return dict_reduce(add_density_matrices_for_degree, context.degree_to_layout, density_matrices)
+    def get_node_ids_and_density_matrices_iter() -> Iterator[tuple[NDArray, NDArray]]:
+        for degree, layout in context.degree_to_layout.items():
+            tensors = state.degree_to_tensor[degree]
+            input_msgs = tuple(
+                state.msgs.batch_slice(idx) for idx in layout.input_msgs_position
+            )
+            yield layout.node_ids.numpy, tensors.get_density_matrices(input_msgs).numpy
 
-def _run_bp(context: Context, state: State) -> State:
-    raise NotImplementedError()
+    for node_ids, src_density in get_node_ids_and_density_matrices_iter():
+        set_densities(node_ids, src_density)
+    return density_matrices
 
-def _apply_z_layer(context: Context, ztime: float, state: State) -> State:
-    raise NotImplementedError()
 
-def _apply_x_layer(xtime: float, state: State) -> State:
-    raise NotImplementedError()
+def _run_bp(context: Context, state: State) -> None:
+    bond_dim = state.bond_dim
+    bp_eps = context.bp_eps
+    max_bp_iters = context.max_bp_iters_number
+    for _ in range(context.max_bp_iters_number):
+        new_msgs = context.backend.make_empty(context.edges_number, (bond_dim, bond_dim))
+        for degree, tensor in state.degree_to_tensor.items():
+            input_msgs_position = context.degree_to_layout[degree].input_msgs_position
+            output_msgs_position = context.degree_to_layout[degree].output_msgs_position
+            aligned_msgs = tuple(state.msgs.batch_slice(pos) for pos in input_msgs_position)
+            new_output_msgs = tensor.pass_msgs(aligned_msgs)
+            for ms, poss in zip(new_output_msgs, output_msgs_position):
+                new_msgs.assign_at_batch_indices(poss, ms)
+        if new_msgs.get_dist(state.msgs) < bp_eps:
+            return
+        else:
+            state.msgs = new_msgs
+    logging.warning(f"BP algorithm exceeds iterations limit set to {max_bp_iters}")
 
-def _truncate_vidal_gauge(context: Context, state: State) -> State:
-    raise NotImplementedError()
+def _apply_z_layer(context: Context, ztime: float, state: State) -> None:
 
-def _set_to_vidal_gauge(context: Context, state: State) -> State:
-    raise NotImplementedError()
+    def apply_z_to_tensor(degree: int, tensor: Tensor) -> Tensor:
+        layout = context.degree_to_layout[degree]
+        node_ampls = layout.node_ampls
+        edge_ampls = (a * ztime for a in layout.edge_ampls)
+        return tensor.apply_z_gates(ztime * node_ampls).apply_conditional_z_gate(edge_ampls)
 
-def _set_to_symmetric_gauge(context: Context, state: State) -> State:
+    new_degree_to_tensor = {d : apply_z_to_tensor(d, t) for d, t in state.degree_to_tensor.items()}
+    new_msgs = state.msgs.extend_msgs()
+    state.degree_to_tensor = new_degree_to_tensor
+    state.msgs = new_msgs
+
+
+def _apply_x_layer(xtime: float, state: State) -> None:
+    new_degree_to_tensor = {d : t.apply_x_gates(xtime) for d, t in state.degree_to_tensor.items()}
+    state.degree_to_tensor = new_degree_to_tensor
+
+
+def _truncate_vidal_gauge(context: Context, state: State) -> None:
+    truncated_degree_to_tensor = {d : t.batch_truncate_all_but(context.max_bond_dim, [0]) for d, t in state.degree_to_tensor.items()}
+    truncated_lmbds = state.lmbds.batch_truncate_all_but(context.max_bond_dim)
+    state.degree_to_tensor = truncated_degree_to_tensor
+    state.lmbds = truncated_lmbds
+
+
+def _set_to_vidal_gauge(context: Context, state: State) -> None:
+    lmbds_number = context.lmbds_number
+    edges_number = context.edges_number
+    pinv_eps = context.pinv_eps
+    msgs_sqrt, msgs_pinv_sqrt = state.msgs.get_msgs_sqrt_and_pinv_sqrt(pinv_eps)
+    # it relies on the insertion order of messages
+    fwd_sqrt_msgs = msgs_sqrt.get_batch_slice(range(lmbds_number))
+    bwd_sqrt_msgs = msgs_sqrt.get_batch_slice(range(lmbds_number, edges_number))
+    # ----------------------------------------------
+    fwd_pinv_sqrt_msgs = msgs_pinv_sqrt.get_batch_slice(range(lmbds_number))
+    bwd_pinv_sqrt_msgs = msgs_pinv_sqrt.get_batch_slice(
+        range(lmbds_number, edges_number)
+    )
+    us, lmbds, vhs = fwd_sqrt_msgs.batch_tensordot(
+        bwd_sqrt_msgs, [[1], [1]]
+    ).get_batch_svd()
+    state.lmbds = lmbds.batch_normalize()
+    canonicalizers = bwd_pinv_sqrt_msgs.batch_matmul(us).batch_concat(
+        vhs.batch_matmul(fwd_pinv_sqrt_msgs)
+    )
+    degree_to_tensor = state.degree_to_tensor
+    for degree, layout in context.degree_to_layout.items():
+        aligned_canonicalizers = tuple(
+            canonicalizers.batch_slice(idx) for idx in layout.input_msgs_position
+        )
+        degree_to_tensor[degree] = degree_to_tensor[degree].apply_canonicalizers(
+            aligned_canonicalizers
+        )
+
+
+def _set_to_symmetric_gauge(context: Context, state: State) -> None:
     state.msgs = _make_msgs_from_lmbds(state.lmbds, context)
-
-    def get_tensors_aligned_sqrt_lmbds(layout: Layout) -> tuple[Tensor, ...]:
-        return tuple(map(lambda idx: state.lmbds.batch_slice(idx).sqrt(), layout.lmbds_position))
-
-    def modify_tensors_per_degree(state: State, degree: int, layout: Layout) -> State:
-        sqrt_lmbds = get_tensors_aligned_sqrt_lmbds(layout)
+    for degree, layout in context.degree_to_layout.items():
+        sqrt_lmbds = tuple(
+            state.lmbds.batch_slice(idx).sqrt() for idx in layout.lmbds_position
+        )
         updated_tensors = state.degree_to_tensor[degree].mul_by_lmbds(sqrt_lmbds)
         state.degree_to_tensor[degree] = updated_tensors
-        return state
 
-    return dict_reduce(modify_tensors_per_degree, context.degree_to_layout, state)
 
 def measure(context: Context, state: State) -> list:
     measurement_outcomes = {}
     threshold = context.measurement_threshold
+    rng = state.rng
 
-    def get_non_measured_ground_probs(state: State) -> list[tuple[int, float]]:
-        return list(map(lambda pair: (pair[0], float(pair[1][0, 0])),
-                        filter(lambda pair: pair[0] not in measurement_outcomes,
-                               enumerate(_get_density_matrices(context, state)))))
+    def is_not_all_measured() -> bool:
+        return len(measurement_outcomes) < context.nodes_number
 
-    def get_z_abs_value(node_to_gp: tuple[int, float]) -> float:
-        return abs(2 * node_to_gp[1] - 1)
+    def get_not_measured_ground_probs() -> dict[int, float]:
+        return {
+            node_id: dens[0, 0]
+            for node_id, dens in enumerate(get_density_matrices(context, state))
+            if node_id not in measurement_outcomes
+        }
 
-    def sample_outcome(p0: float, rng: Generator) -> int:
-        val = rng.uniform(0., 1.)
-        return 0 if p0 > val else 1
+    def get_z_abs_value(node_id_prob: tuple[int, float]) -> float:
+        return abs(2 * node_id_prob[1] - 1)
+
+    def sample_outcome(prob: float) -> int:
+        val = rng.uniform(0.0, 1.0)
+        return 0 if prob > val else 1
 
     def apply_and_register_measurement(
-            state: State,
-            projector_id: int,
-            node_id: int,
-    ) -> State:
-        measurement_outcomes[node_id] = projector_id
-        raise NotImplementedError()
+        measurement_outcome: int,
+        node_id: int,
+    ) -> None:
+        measurement_outcomes[node_id] = measurement_outcome
+        degree, pos = context.path_to_tensors[node_id]
+        state.degree_to_tensor[degree].measure(pos, measurement_outcome)
 
-    def apply_and_register_0_measurement(state: State, node_id: int) -> State:
-        return apply_and_register_measurement(state, 0, node_id)
+    def apply_and_register_0_measurement(node_id: int) -> None:
+        apply_and_register_measurement(0, node_id)
 
-    def apply_and_register_1_measurement(state: State, node_id: int) -> State:
-        return apply_and_register_measurement(state, 1, node_id)
+    def apply_and_register_1_measurement(node_id: int) -> None:
+        apply_and_register_measurement(1, node_id)
 
-    def get_nodes_above_threshold(node_to_gp: list[tuple[int, float]]) -> Iterable[int]:
-        return map(lambda pair: pair[0],
-                   filter(lambda pair: pair[1] > threshold,
-                          node_to_gp))
+    def measure_nodes_above_threshold(not_measured_nodes: dict[int, float]) -> None:
+        for node_id in (
+            node_id for node_id, prob in not_measured_nodes.items() if prob > threshold
+        ):
+            apply_and_register_0_measurement(node_id)
 
-    def get_nodes_below_threshold(node_to_gp: list[tuple[int, float]]) -> Iterable[int]:
-        return map(lambda pair: pair[0],
-                   filter(lambda pair: pair[1] < 1. - threshold,
-                          node_to_gp))
+    def measure_nodes_below_threshold(not_measured_nodes: dict[int, float]) -> None:
+        for node_id in (
+            node_id
+            for node_id, prob in not_measured_nodes.items()
+            if prob < 1.0 - threshold
+        ):
+            apply_and_register_1_measurement(node_id)
 
-    while len(measurement_outcomes) < context.nodes_number:
-        node_to_gp = get_non_measured_ground_probs(state)
-        node_id, p0 = min(node_to_gp, key=get_z_abs_value)
-        projector_id = sample_outcome(p0, context.numpy_rng)
-        state = apply_and_register_measurement(state, projector_id, node_id)
-        state = _run_bp(context, state)
-        state = reduce(apply_and_register_0_measurement, get_nodes_above_threshold(node_to_gp), state)
-        state = _run_bp(context, state)
-        state = reduce(apply_and_register_1_measurement, get_nodes_below_threshold(node_to_gp), state)
-        state = _run_bp(context, state)
-    state = _set_to_vidal_gauge(context, state)
-    state = _truncate_vidal_gauge(context, state)
-    state = _set_to_symmetric_gauge(context, state)
-    _ = _run_bp(context, state)
-    measurement_outcomes = list(map(lambda node_id: measurement_outcomes[node_id], range(len(measurement_outcomes))))
+    while is_not_all_measured():
+        not_measured_ground_probs = get_not_measured_ground_probs()
+        node_id, prob = min(not_measured_ground_probs.items(), key=get_z_abs_value)
+        measurement_outcome = sample_outcome(prob)
+        apply_and_register_measurement(measurement_outcome, node_id)
+        _run_bp(context, state)
+        not_measured_ground_probs = get_not_measured_ground_probs()
+        measure_nodes_above_threshold(not_measured_ground_probs)
+        measure_nodes_below_threshold(not_measured_ground_probs)
+        _run_bp(context, state)
+    _set_to_vidal_gauge(context, state)
+    _truncate_vidal_gauge(context, state)
+    _set_to_symmetric_gauge(context, state)
+    _run_bp(context, state)
+    measurement_outcomes = [measurement_outcomes[node_id] for node_id in range(len(measurement_outcomes))]
     log.info("Sampling measurement outcomes completed")
     return measurement_outcomes
 
-def run_layer(context: Context, xtime: float, ztime: float, state: State) -> None:
-    state = _apply_z_layer(context, ztime, state)
-    state = _run_bp(context, state)
-    state = _set_to_vidal_gauge(context, state)
-    state = _truncate_vidal_gauge(context, state)
-    state = _set_to_symmetric_gauge(context, state)
-    state = _run_bp(context, state)
-    _ = _apply_x_layer(xtime, state)  # in all subroutines state is also mutated accordingly
-    log.info(f"Layer with ztime {ztime} and xtime {xtime} is applied")
 
+def run_layer(context: Context, xtime: float, ztime: float, state: State) -> None:
+    _apply_z_layer(context, ztime, state)
+    _run_bp(context, state)
+    _set_to_vidal_gauge(context, state)
+    _truncate_vidal_gauge(context, state)
+    _set_to_symmetric_gauge(context, state)
+    _run_bp(context, state)
+    _apply_x_layer(xtime, state)  # in all subroutines state is also mutated accordingly
+    log.info(f"Layer with ztime {ztime} and xtime {xtime} is applied")
