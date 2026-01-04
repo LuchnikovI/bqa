@@ -53,7 +53,7 @@ def _make_initial_degree_to_tensor(context: Context) -> dict[int, Tensor]:
 
 
 def _make_msgs_from_lmbds(lmbds: Tensor, context: Context) -> Tensor:
-    return lmbds.batch_slice(context.msg_pos_to_lmbd_pos).batch_normalize().batch_diag()
+    return lmbds.batch_slice(context.msg_pos_to_lmbd_pos).batch_diag().batch_trace_normalize()
 
 
 def _make_initial_lmbds(context: Context) -> Tensor:
@@ -92,14 +92,16 @@ def get_density_matrices(context: Context, state: State) -> NDArray:
 
     for node_ids, src_density in get_node_ids_and_density_matrices_iter():
         set_densities(node_ids, src_density)
+    log.info("Density matrices have been computed")
     return density_matrices
 
 
 def _run_bp(context: Context, state: State) -> None:
+    log.debug("BP algorithm has started")
     bond_dim = state.bond_dim
     bp_eps = context.bp_eps
     max_bp_iters = context.max_bp_iters_number
-    for _ in range(context.max_bp_iters_number):
+    for iter_num in range(context.max_bp_iters_number):
         new_msgs = context.backend.make_empty(context.edges_number, (bond_dim, bond_dim))
         for degree, tensor in state.degree_to_tensor.items():
             input_msgs_position = context.degree_to_layout[degree].input_msgs_position
@@ -107,12 +109,16 @@ def _run_bp(context: Context, state: State) -> None:
             aligned_msgs = tuple(state.msgs.batch_slice(pos) for pos in input_msgs_position)
             new_output_msgs = tensor.pass_msgs(aligned_msgs)
             for ms, poss in zip(new_output_msgs, output_msgs_position):
-                new_msgs.assign_at_batch_indices(poss, ms)
-        if new_msgs.get_dist(state.msgs) < bp_eps:
+                new_msgs.assign_at_batch_indices(ms, poss)
+        dist = new_msgs.get_dist(state.msgs)
+        log.debug(f"Distance between subsequent messages {dist}")
+        if dist < bp_eps:
+            log.debug(f"BP algorithm completed after {iter_num} iterations")
             return
         else:
             state.msgs = new_msgs
-    logging.warning(f"BP algorithm exceeds iterations limit set to {max_bp_iters}")
+    log.warning(f"BP algorithm exceeds iterations limit set to {max_bp_iters}")
+
 
 def _apply_z_layer(context: Context, ztime: float, state: State) -> None:
 
@@ -120,7 +126,7 @@ def _apply_z_layer(context: Context, ztime: float, state: State) -> None:
         layout = context.degree_to_layout[degree]
         node_ampls = layout.node_ampls
         edge_ampls = (a * ztime for a in layout.edge_ampls)
-        return tensor.apply_z_gates(ztime * node_ampls).apply_conditional_z_gate(edge_ampls)
+        return tensor.apply_z_gates(ztime * node_ampls).apply_conditional_z_gates(edge_ampls)
 
     new_degree_to_tensor = {d : apply_z_to_tensor(d, t) for d, t in state.degree_to_tensor.items()}
     new_msgs = state.msgs.extend_msgs()
@@ -134,32 +140,46 @@ def _apply_x_layer(xtime: float, state: State) -> None:
 
 
 def _truncate_vidal_gauge(context: Context, state: State) -> None:
-    truncated_degree_to_tensor = {d : t.batch_truncate_all_but(context.max_bond_dim, [0]) for d, t in state.degree_to_tensor.items()}
-    truncated_lmbds = state.lmbds.batch_truncate_all_but(context.max_bond_dim)
+    max_rank = state.lmbds.compute_minimal_rank_from_lmbd(context.pinv_eps)
+    bond_dim = min(max_rank, context.max_bond_dim)
+    truncated_degree_to_tensor = {d : t.batch_truncate_all_but(bond_dim, [0]) for d, t in state.degree_to_tensor.items()}
+    truncated_lmbds = state.lmbds.batch_truncate_all_but(bond_dim)
     state.degree_to_tensor = truncated_degree_to_tensor
     state.lmbds = truncated_lmbds
+    new_tensor_shapes = {d : t.batch_shape for d, t in state.degree_to_tensor.items()}
+    new_lmbds_shapes = state.lmbds.batch_shape
+    log.debug(f"Vidal gauge has been truncated, tensor shapes: {new_tensor_shapes}, lmbds shapes: {new_lmbds_shapes}")
 
 
 def _set_to_vidal_gauge(context: Context, state: State) -> None:
-    lmbds_number = context.lmbds_number
-    edges_number = context.edges_number
     pinv_eps = context.pinv_eps
-    msgs_sqrt, msgs_pinv_sqrt = state.msgs.get_msgs_sqrt_and_pinv_sqrt(pinv_eps)
-    # it relies on the insertion order of messages
-    fwd_sqrt_msgs = msgs_sqrt.get_batch_slice(range(lmbds_number))
-    bwd_sqrt_msgs = msgs_sqrt.get_batch_slice(range(lmbds_number, edges_number))
-    # ----------------------------------------------
-    fwd_pinv_sqrt_msgs = msgs_pinv_sqrt.get_batch_slice(range(lmbds_number))
-    bwd_pinv_sqrt_msgs = msgs_pinv_sqrt.get_batch_slice(
-        range(lmbds_number, edges_number)
-    )
-    us, lmbds, vhs = fwd_sqrt_msgs.batch_tensordot(
-        bwd_sqrt_msgs, [[1], [1]]
-    ).get_batch_svd()
+
+    # these three functions rely on the insertion order of msgs into a dict
+    def get_fwd(t: Tensor) -> Tensor:
+        return t.get_batch_slice(range(context.lmbds_number))
+
+    def get_bwd(t: Tensor) -> Tensor:
+        return t.get_batch_slice(range(context.lmbds_number, context.edges_number))
+
+    def assembly_canonicalizers(fwd_canonicalizer: Tensor, bwd_canonicalizer: Tensor) -> Tensor:
+        return bwd_canonicalizer.batch_concat(fwd_canonicalizer)
+    # ---------------------------------------------------------------
+
+    def colide(fwd: Tensor, bwd: Tensor) -> tuple[Tensor, ...]:
+        ker = fwd.batch_tensordot(bwd, [[1], [1]])
+        us, s, vhs = ker.get_batch_svd(pinv_eps)
+        return us, s, vhs.batch_transpose((1, 0))
+
+    ul, lu = state.msgs.decompose_iden_using_msgs(pinv_eps)
+    fwd_lu = get_fwd(lu)
+    bwd_lu = get_bwd(lu)
+    fwd_ul = get_fwd(ul)
+    bwd_ul = get_bwd(ul)
+    us, lmbds, vs = colide(fwd_lu, bwd_lu)
     state.lmbds = lmbds.batch_normalize()
-    canonicalizers = bwd_pinv_sqrt_msgs.batch_matmul(us).batch_concat(
-        vhs.batch_matmul(fwd_pinv_sqrt_msgs)
-    )
+    fwd_canonicalizer = fwd_ul.batch_matmul(us)
+    bwd_canonicalizer = bwd_ul.batch_matmul(vs)
+    canonicalizers = assembly_canonicalizers(fwd_canonicalizer, bwd_canonicalizer)
     degree_to_tensor = state.degree_to_tensor
     for degree, layout in context.degree_to_layout.items():
         aligned_canonicalizers = tuple(
@@ -168,6 +188,7 @@ def _set_to_vidal_gauge(context: Context, state: State) -> None:
         degree_to_tensor[degree] = degree_to_tensor[degree].apply_canonicalizers(
             aligned_canonicalizers
         )
+    log.debug("State has been set to Vidal gauge")
 
 
 def _set_to_symmetric_gauge(context: Context, state: State) -> None:
@@ -178,6 +199,7 @@ def _set_to_symmetric_gauge(context: Context, state: State) -> None:
         )
         updated_tensors = state.degree_to_tensor[degree].mul_by_lmbds(sqrt_lmbds)
         state.degree_to_tensor[degree] = updated_tensors
+    log.debug("State has been set to Symmetric_gauge")
 
 
 def measure(context: Context, state: State) -> list:

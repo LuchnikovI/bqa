@@ -1,5 +1,4 @@
 from functools import reduce
-from itertools import islice
 from math import cos, prod, sin, sqrt
 from typing import Iterable, Optional, Self, Sequence, TypeVar, Generic, Callable
 from abc import ABC, abstractmethod
@@ -72,13 +71,6 @@ class Tensor(ABC, Generic[RawTensor]):
     @staticmethod
     @abstractmethod
     def concatenate_raw_tensors(lhs: RawTensor, rhs: RawTensor, axis: int) -> RawTensor:
-        pass
-
-    @staticmethod
-    @abstractmethod
-    def batch_multiply_raw_tensor_by_constants(
-        raw_tensor: RawTensor, constants: RawTensor
-    ) -> RawTensor:
         pass
 
     @staticmethod
@@ -181,24 +173,15 @@ class Tensor(ABC, Generic[RawTensor]):
 
     @staticmethod
     @abstractmethod
-    def get_batch_raw_tensor_svd(
+    def get_batch_raw_tensor_svd_in_subspace(
         raw_tensor: RawTensor,
+        pinv_eps: float,
     ) -> tuple[RawTensor, RawTensor, RawTensor]:
         pass
 
     @staticmethod
     @abstractmethod
-    def get_raw_tensor_relu(raw_tensor: RawTensor) -> RawTensor:
-        pass
-
-    @staticmethod
-    @abstractmethod
-    def get_raw_tensor_elementwise_pinv(raw_tensor: RawTensor, eps: float) -> RawTensor:
-        pass
-
-    @staticmethod
-    @abstractmethod
-    def batch_concat_raw_tensors(lhs: RawTensor, rhs: RawTensor) -> RawTensor:
+    def get_raw_tensor_elementwise_pinv(raw_tensor: RawTensor) -> RawTensor:
         pass
 
     @staticmethod
@@ -221,6 +204,11 @@ class Tensor(ABC, Generic[RawTensor]):
     @staticmethod
     @abstractmethod
     def get_cos_raw_tensor(raw_tensor: RawTensor) -> RawTensor:
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def compute_minimal_rank_from_raw_lmbds(lmbds: RawTensor, eps: float) -> int:
         pass
 
     # rest are implementations in terms of abstract methods (do not overload)
@@ -278,22 +266,12 @@ class Tensor(ABC, Generic[RawTensor]):
         self.measure_raw_tensor_by_position_in_place(self.raw_tensor, position, outcome)
 
     def batch_normalize(self) -> Self:
-        raw_tensor = self.raw_tensor
-        inv_norm = self.inverse_raw_tensor_elementwise(
-            self.get_batched_raw_tensor_l2_norm(raw_tensor)
-        )
-        return self.apply_to_raw_tensor(
-            self.batch_multiply_raw_tensor_by_constants, inv_norm
-        )
+        inv_norm = self.apply_to_raw_tensor(lambda raw_tensor: self.inverse_raw_tensor_elementwise(self.get_batched_raw_tensor_l2_norm(raw_tensor)))
+        return self._mul_by_constants(inv_norm)
 
     def batch_trace_normalize(self) -> Self:
-        raw_tensor = self.raw_tensor
-        inv_trace = self.inverse_raw_tensor_elementwise(
-            self.get_batched_raw_tensor_trace(raw_tensor)
-        )
-        return self.apply_to_raw_tensor(
-            self.batch_multiply_raw_tensor_by_constants, inv_trace
-        )
+        inv_trace = self.apply_to_raw_tensor(lambda raw_tensor: self.inverse_raw_tensor_elementwise(self.get_batched_raw_tensor_trace(raw_tensor)))
+        return self._mul_by_constants(inv_trace)
 
     def batch_reshape(self, shape: tuple[int, ...]) -> Self:
         return self.apply_to_raw_tensor(self.batch_reshape_raw_tensor, shape)
@@ -356,9 +334,9 @@ class Tensor(ABC, Generic[RawTensor]):
             ]
             return self._batch_tensordot(other, desug_axes)
 
-    def _apply_iden_msg(self, axis: int) -> Self:
+    def _move_first_bond_to_last_pos(self) -> Self:
         batch_rank = self.batch_rank
-        new_indices_order = (*(i for i in range(batch_rank) if i != axis), axis)
+        new_indices_order = (0, *range(2, batch_rank), 1)
         return self.batch_transpose(new_indices_order)
 
     def _apply_msgs_but_one(self, msgs: tuple[Self, ...], but: int) -> Self:
@@ -368,28 +346,30 @@ class Tensor(ABC, Generic[RawTensor]):
             return (
                 tensor.batch_tensordot(msg, [[1], [1]])
                 if pos != but
-                else tensor._apply_iden_msg(1)
+                else tensor._move_first_bond_to_last_pos()
             )
 
         return reduce(apply_msg, enumerate(msgs), self)
 
-    def _compute_msg(self, msgs: tuple[Self, ...], idx: int) -> Self:
+    def _compute_msg(self, self_conj: Self,  msgs: tuple[Self, ...], idx: int) -> Self:
         tensor_msgs = self._apply_msgs_but_one(msgs, idx)
         rank = self.batch_rank
-        indices = [i for i in range(rank) if i != idx]
+        indices = [i for i in range(rank) if i != idx + 1]
         return (
-            self.conj()
+            self_conj
             .batch_tensordot(tensor_msgs, [indices, indices])
             .batch_trace_normalize()
         )
 
     def pass_msgs(self, msgs: tuple[Self, ...]) -> tuple[Self, ...]:
-        return tuple(self._compute_msg(msgs, idx + 1) for idx in range(len(msgs)))
+        self_conj = self.conj()
+        return tuple(self._compute_msg(self_conj, msgs, idx) for idx in range(len(msgs)))
 
     def apply_canonicalizers(self, canonicalizers: tuple[Self, ...]) -> Self:
+        assert self.batch_rank - 1 == len(canonicalizers)
         return reduce(
-            lambda t, c: t.batch_tensordot(c, [[0], [1]]), canonicalizers, self
-        ).batch_normalize()
+            lambda t, c: t.batch_tensordot(c, [[1], [0]]), canonicalizers, self
+        )
 
     def _apply_x_to_phys_dim(self) -> Self:
         return self.apply_to_raw_tensor(self.apply_x_to_phys_dim_raw)
@@ -403,8 +383,8 @@ class Tensor(ABC, Generic[RawTensor]):
         )
         conj_tensor = self.conj()
         indices_to_contract = list(range(1, tensor_msgs.batch_rank))
-        return conj_tensor.batch_tensordot(
-            tensor_msgs, [indices_to_contract, indices_to_contract]
+        return tensor_msgs.batch_tensordot(
+            conj_tensor, [indices_to_contract, indices_to_contract]
         ).batch_trace_normalize()
 
     def mul_by_lmbds(self, lmbds: tuple[Self, ...]) -> Self:
@@ -416,9 +396,7 @@ class Tensor(ABC, Generic[RawTensor]):
             pos, lmbd = pos_and_lmbd
             dim = batch_shape[pos + 1]
             assert dim == lmbd.batch_shape[0]
-            lmbd_new_shape = (1,) + tuple(
-                dim if p == pos else 1 for p in range(lmbds_num)
-            )
+            lmbd_new_shape = (1, *(dim if p == pos else 1 for p in range(lmbds_num)))
             return tensor * lmbd.batch_reshape(lmbd_new_shape)
 
         return reduce(mul_by_lmbd, enumerate(lmbds), self).batch_normalize()
@@ -426,14 +404,11 @@ class Tensor(ABC, Generic[RawTensor]):
     def sqrt(self) -> Self:
         return self.apply_to_raw_tensor(self.take_raw_tensor_elementwise_sqrt)
 
-    def relu(self) -> Self:
-        return self.apply_to_raw_tensor(self.get_raw_tensor_relu)
-
     def inv(self) -> Self:
         return self.apply_to_raw_tensor(self.inverse_raw_tensor_elementwise)
 
-    def pinv(self, eps: float) -> Self:
-        return self.apply_to_raw_tensor(self.get_raw_tensor_elementwise_pinv, eps)
+    def pinv(self) -> Self:
+        return self.apply_to_raw_tensor(self.get_raw_tensor_elementwise_pinv)
 
     def get_batch_slice(self, indices: range) -> Self:
         assert indices.step == 1
@@ -441,23 +416,24 @@ class Tensor(ABC, Generic[RawTensor]):
             self.take_raw_tensor_batch_slice, indices.start, indices.stop
         )
 
-    def get_batch_svd(self) -> tuple[Self, ...]:
-        return tuple(self.make_from_raw_tensor(x) for x in self.get_batch_raw_tensor_svd(self.raw_tensor))
+    def get_batch_svd(self, pinv_eps: float) -> tuple[Self, Self, Self]:
+        u, s, vh = self.get_batch_raw_tensor_svd_in_subspace(self.raw_tensor, pinv_eps)
+        return self.make_from_raw_tensor(u), self.make_from_raw_tensor(s), self.make_from_raw_tensor(vh)
 
-    def get_msgs_sqrt_and_pinv_sqrt(self, eps: float) -> tuple[Self, Self]:
-        u, lmbd, uh = self.get_batch_svd()  # message is psd matrix, vh == uh
+    def decompose_iden_using_msgs(self, eps: float) -> tuple[Self, Self]:
+        u, lmbd, uh = self.get_batch_svd(eps)
         lmbd_size = lmbd.batch_shape[0]
-        lmbd_sqrt = lmbd.relu().sqrt().batch_reshape((1, lmbd_size))
-        msgs_sqrt = (u * lmbd_sqrt).batch_matmul(uh)
-        lmbd_sqrt_pinv = lmbd_sqrt.pinv(eps)
-        msgs_pinv_sqrt = (u * lmbd_sqrt_pinv).batch_matmul(uh)
-        return msgs_sqrt, msgs_pinv_sqrt
+        lmbd_sqrt = lmbd.sqrt()
+        lu = lmbd_sqrt.batch_reshape((lmbd_size, 1)) * uh
+        lmbd_sqrt_pinv = lmbd_sqrt.pinv()
+        ul = u * lmbd_sqrt_pinv.batch_reshape((1, lmbd_size))
+        return ul, lu
 
     def get_dist(self, other: Self) -> float:
         return self.get_raw_tensor_l2_norm((self - other).raw_tensor) / self.get_raw_tensor_l2_norm((self + other).raw_tensor)
 
     def batch_concat(self, other: Self) -> Self:
-        return self.apply_to_raw_tensor(self.batch_concat_raw_tensors, other)
+        return self.apply_to_raw_tensor(self.concatenate_raw_tensors, other.raw_tensor, 0)
 
     def sin(self) -> Self:
         return self.apply_to_raw_tensor(self.get_sin_raw_tensor)
@@ -472,7 +448,8 @@ class Tensor(ABC, Generic[RawTensor]):
         return self._mul_by_constants(ztimes.cos()) - 1j * self._apply_z_to_phys_dim()._mul_by_constants(ztimes.sin())
 
     def _mul_by_constants(self, constants: Self) -> Self:
-        return self.apply_to_raw_tensor(self.batch_multiply_raw_tensor_by_constants, constants.raw_tensor)
+        rank = self.batch_rank
+        return self * constants.batch_reshape(rank * (1,))
 
     def _batch_concatenate(self, other: Self, axis: int) -> Self:
         return self.apply_to_raw_tensor(self.concatenate_raw_tensors, other.raw_tensor, axis + 1)
@@ -482,17 +459,20 @@ class Tensor(ABC, Generic[RawTensor]):
         down = self._apply_z_to_phys_dim()._mul_by_constants(SQRT_NEG_1J * coupling.sin().sqrt())
         return up._batch_concatenate(down, axis)
 
-    def apply_conditional_z_gate(self, couplings: Iterable[Self]) -> Self:
+    def apply_conditional_z_gates(self, couplings: Iterable[Self]) -> Self:
         def reduction_func(acc: Self, axis_and_coupling: tuple[int, Self]) -> Self:
             axis, coupling = axis_and_coupling
             return acc._apply_conditional_z_gate_to_single_axis(axis, coupling)
-        return reduce(reduction_func, ((i + 1, c) for i, c in enumerate(couplings)), self)
+        return reduce(reduction_func, ((i + 1, c) for i, c in enumerate(couplings)), self).batch_normalize()
 
     def extend_msgs(self) -> Self:
         d, d_rhs = self.batch_shape
         assert d == d_rhs
         eye = self.make_from_numpy(np.eye(2, dtype=NP_DTYPE).reshape((1, 2, 2, 1, 1)))
         return (self.batch_reshape((1, 1, d, d)) * eye).batch_reshape((2 * d, 2 * d))
+
+    def compute_minimal_rank_from_lmbd(self, eps: float) -> int:
+        return self.compute_minimal_rank_from_raw_lmbds(self.raw_tensor, eps)
 
     def __str__(self):
         return f"{self.__class__.__name__}({self.raw_tensor.__str__()})"
@@ -575,14 +555,6 @@ class NumPyBackend(Tensor):
         return np.trace(raw_tensor, axis1=-2, axis2=-1)
 
     @staticmethod
-    def batch_multiply_raw_tensor_by_constants(
-        raw_tensor: NDArray, constants: NDArray
-    ) -> NDArray:
-        shape = raw_tensor.shape
-        rank = len(shape) - 1
-        return constants.reshape((-1, *(rank * (1,)))) * raw_tensor
-
-    @staticmethod
     def apply_x_to_phys_dim_raw(raw_tensor: NDArray) -> NDArray:
         return raw_tensor[:, ::-1]
 
@@ -663,28 +635,24 @@ class NumPyBackend(Tensor):
         return lhs - rhs
 
     @staticmethod
-    def get_batch_raw_tensor_svd(
+    def get_batch_raw_tensor_svd_in_subspace(
         raw_tensor: NDArray,
+        pinv_eps: float,
     ) -> tuple[NDArray, NDArray, NDArray]:
-        return svd(raw_tensor, full_matrices=False)
+        u, s, vh = svd(raw_tensor, full_matrices=False)
+        mask = s > pinv_eps
+        s = (s * mask).astype(NP_DTYPE)
+        return u * mask[..., np.newaxis, :], s.astype(NP_DTYPE), vh * mask[..., np.newaxis]
 
     @staticmethod
-    def get_raw_tensor_relu(raw_tensor: NDArray) -> NDArray:
-        return np.maximum(np.real(raw_tensor), 0.0).astype(NP_DTYPE)
-
-    @staticmethod
-    def get_raw_tensor_elementwise_pinv(raw_tensor: NDArray, eps: float) -> NDArray:
+    def get_raw_tensor_elementwise_pinv(raw_tensor: NDArray) -> NDArray:
         dtype = raw_tensor.dtype
         return np.divide(
             1.0,
             raw_tensor,
             out=np.zeros_like(raw_tensor, dtype),
-            where=np.abs(raw_tensor) >= eps,
+            where=raw_tensor > np.finfo(NP_DTYPE).eps,
         )
-
-    @staticmethod
-    def batch_concat_raw_tensors(lhs: NDArray, rhs: NDArray) -> NDArray:
-        return np.concatenate([lhs, rhs], axis=0)
 
     @staticmethod
     def measure_raw_tensor_by_position_in_place(
@@ -713,3 +681,6 @@ class NumPyBackend(Tensor):
     def concatenate_raw_tensors(lhs: NDArray, rhs: NDArray, axis: int) -> NDArray:
         return np.concatenate([lhs, rhs], axis)
 
+    @staticmethod
+    def compute_minimal_rank_from_raw_lmbds(lmbds: NDArray, eps: float) -> int:
+        return int(np.max((lmbds > eps).sum(-1)))

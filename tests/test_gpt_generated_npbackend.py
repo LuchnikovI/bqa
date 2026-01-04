@@ -31,7 +31,7 @@ def test_make_from_list_int():
 
 def test_make_from_list_float():
     t = NumPyBackend.make_from_list([1.0, -2.0])
-    assert t.raw_tensor.dtype == np.complex64
+    assert t.raw_tensor.dtype == np.complex128
 
 
 def test_make_from_numpy_identity():
@@ -41,7 +41,7 @@ def test_make_from_numpy_identity():
 
 
 # ---------------------------------------------------------
-# 2. Basic elementwise ops: sqrt, relu, inverse, pinv
+# 2. Basic elementwise ops: sqrt, inverse, pinv
 # ---------------------------------------------------------
 
 
@@ -53,26 +53,11 @@ def test_elementwise_sqrt(shape):
     assert np.allclose(out, np.sqrt(x))
 
 
-def test_relu():
-    x = np.array([[[-1.0, +2.0]]])
-    t = make(x)
-    out = t.relu().raw_tensor
-    assert np.allclose(out, np.array([[0.0, 2.0]]))
-
-
 def test_inverse_no_zeros():
     x = rand_batch(3, 4, 5) + 1.0  # shift away from zero
     t = make(x)
     out = t.inv().raw_tensor
     assert np.allclose(out, 1 / x)
-
-
-def test_pinv_small_threshold():
-    x = np.array([[0.0, 0.1, 2.0]])
-    t = make(x)
-    out = t.pinv(1e-3).raw_tensor
-    expected = np.array([0.0, 1 / 0.1, 1 / 2.0])
-    assert np.allclose(out, expected)
 
 
 # ---------------------------------------------------------
@@ -194,7 +179,7 @@ def test_batch_slice_range():
 def test_batch_svd_reconstruct():
     X = rand_batch(4, 5, 5)
     t = make(X)
-    u, s, vh = t.get_batch_svd()
+    u, s, vh = t.get_batch_svd(1e-6)
     U = u.raw_tensor
     S = s.raw_tensor
     VH = vh.raw_tensor
@@ -228,24 +213,10 @@ def test_batch_multiply_constants():
     X = rand_batch(4, 3, 3)
     c = np.array([2.0, 0.5, -1.0, 1.0])
     tX = make(X)
-    out = tX.apply_to_raw_tensor(
-        NumPyBackend.batch_multiply_raw_tensor_by_constants, c
-    ).raw_tensor
+    tc = make(c)
+    out = tX._mul_by_constants(tc).raw_tensor
 
     expected = np.array([c[b] * X[b] for b in range(4)])
-    assert np.allclose(out, expected)
-
-
-# ---------------------------------------------------------
-# 11. pinv correctness for matrices
-# ---------------------------------------------------------
-
-
-def test_elementwise_pinv_behavior():
-    X = np.array([[0.001, 0.0, -0.2]])
-    t = make(X)
-    out = t.pinv(1e-3).raw_tensor
-    expected = np.array([[1000.0, 0.0, -5.0]])
     assert np.allclose(out, expected)
 
 
@@ -260,21 +231,3 @@ def test_conj():
     out = t.conj().raw_tensor
     assert np.allclose(out, np.conj(Z))
 
-
-# ---------------------------------------------------------
-# 13. smoke test: message passing logic doesn’t crash
-# ---------------------------------------------------------
-
-
-def test_msgs_sqrt_and_pinv_sqrt_smoke():
-    # Use small PSD matrices
-    A = rand_batch(3, 4, 4)
-    A = A @ np.transpose(A, (0, 2, 1)) + np.eye(4)  # make PSD
-    t = make(A)
-    eps = 1e-6
-    sqrt_msg, pinv_sqrt_msg = t.get_msgs_sqrt_and_pinv_sqrt(eps)
-    assert sqrt_msg.raw_tensor.shape == A.shape
-    assert pinv_sqrt_msg.raw_tensor.shape == A.shape
-    # ensure they are finite
-    assert np.isfinite(sqrt_msg.raw_tensor).all()
-    assert np.isfinite(pinv_sqrt_msg.raw_tensor).all()

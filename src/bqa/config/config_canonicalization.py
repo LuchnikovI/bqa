@@ -88,6 +88,7 @@ def _make_degree_to_layout(
         degree = len(nghbrng_ids)
         layout = get_layout_or_default(degree)
         layout["node_ids"].append(node_id)
+        layout["node_ampls"].append(node_to_ampl.get(node_id, default_field))
         vectorized_append(
             layout["input_msgs_position"],
             (edge_to_msg_position[(src_id, node_id)] for src_id in nghbrng_ids),
@@ -100,7 +101,6 @@ def _make_degree_to_layout(
             layout["lmbds_position"],
             (edge_to_lmbd_position[(node_id, dst_id)] for dst_id in nghbrng_ids),
         )
-        layout["node_ampls"].append(node_to_ampl.get(node_id, default_field))
         vectorized_append(
             layout["edge_ampls"],
             (edge_to_ampl[(node_id, dst_id)] for dst_id in nghbrng_ids)
@@ -145,6 +145,7 @@ def _make_paths_to_tensors(
 @dataclass
 class Context:
     backend: Type[Tensor]
+    graph: Graph
     bp_eps: float
     pinv_eps: float
     measurement_threshold: float
@@ -157,6 +158,10 @@ class Context:
     degree_to_layout: dict[int, Layout]
     path_to_tensors: dict[int, tuple[int, int]]
     instructions: list[Instruction]
+    edge_to_ampl: EdgeToAmpl
+    node_to_ampl: NodeToAmpl
+    edge_to_msg_pos: EdgeToPosition
+    edge_to_lmbd_pos: EdgeToPosition
 
     @property
     def lmbds_number(self) -> int:
@@ -221,6 +226,7 @@ def _canonicalize_config(config: Config) -> Context:
     )
     return Context(
         backend,
+        graph,
         config["bp_eps"],
         config["pinv_eps"],
         config["measurement_threshold"],
@@ -233,4 +239,8 @@ def _canonicalize_config(config: Config) -> Context:
         degree_to_layout,
         _make_paths_to_tensors(degree_to_layout),
         list(_canonicalize_schedule(config["schedule"])),
+        config["edges"],
+        config["nodes"],
+        edge_to_msg_position,
+        edge_to_lmbd_position,
     )

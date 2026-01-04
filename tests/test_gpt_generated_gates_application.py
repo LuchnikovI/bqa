@@ -50,7 +50,7 @@ def test_x_eigenstate_minus():
 
 
 def test_z_squared_identity():
-    psi = make_single_qubit_tensor([0.3, 0.954])
+    psi = make_single_qubit_tensor([0.4, 0.7])
     psi2 = psi._apply_z_to_phys_dim()._apply_z_to_phys_dim()
     assert np.allclose(psi2.numpy, psi.numpy)
 
@@ -77,14 +77,14 @@ def test_single_qubit_unitarity(angle):
 def test_conditional_z_doubles_bond():
     psi = make_single_qubit_tensor([[[1.0]], [[0.0]]])
     coupling = NumPyBackend.make_from_numpy(np.array([0.5], NP_DTYPE))
-    psi2 = psi.apply_conditional_z_gate([coupling, coupling])
+    psi2 = psi.apply_conditional_z_gates([coupling, coupling])
     assert psi2.batch_rank == 3
     assert psi2.batch_shape == (2, 2, 2)
 
 def test_conditional_z_zero_is_identity():
-    psi = make_single_qubit_tensor([[0.3], [0.954]])
+    psi = make_single_qubit_tensor([[0.5], [0.8]]).batch_normalize()
     coupling = NumPyBackend.make_from_numpy(np.array([0.0], NP_DTYPE))
-    psi2 = psi.apply_conditional_z_gate([coupling])
+    psi2 = psi.apply_conditional_z_gates([coupling])
     recovered = psi2.numpy[:, :, 0]
     assert np.allclose(recovered, psi.numpy[:, :, 0])
 

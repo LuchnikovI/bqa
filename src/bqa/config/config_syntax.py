@@ -1,4 +1,3 @@
-from functools import reduce
 from typing import Any
 from bqa.config.schedule_syntax import DEFAULT_SCHEDULE, _analyse_schedule
 from bqa.config.utils import (
@@ -58,27 +57,29 @@ def _analyse_backend(backend) -> str:
         raise ConfigSyntaxError(f"Invalid backend {backend}")
 
 
-def _add_analyse_node(nodes: NodeToAmpl, node) -> NodeToAmpl:
-    if isinstance(node, (tuple, list)) and len(node) == 2:
-        try:
-            node_id = _analyse_non_neg_int(node[0])
-            field = _analyse_number(node[1])
-            if node_id in nodes:
-                raise ConfigSyntaxError(f"Duplicated node ID {node_id}")
-            else:
-                nodes[node_id] = field
-                return nodes
-        except ConfigSyntaxError as e:
-            raise ConfigSyntaxError(f"Invalid node {node}") from e
-    else:
-        raise ConfigSyntaxError(f"Invalid node {node}")
-
-
 def _analyse_nodes(nodes) -> NodeToAmpl:
+    analysed_nodes = {}
+
+    def analyse_insert_node(node) -> None:
+        if isinstance(node, (tuple, list)) and len(node) == 2:
+            try:
+                node_id = _analyse_non_neg_int(node[0])
+                field = _analyse_number(node[1])
+                if node_id in analysed_nodes:
+                    raise ConfigSyntaxError(f"Duplicated node ID {node_id}")
+                else:
+                    analysed_nodes[node_id] = field
+            except ConfigSyntaxError as e:
+                raise ConfigSyntaxError(f"Invalid node {node}") from e
+        else:
+            raise ConfigSyntaxError(f"Invalid node {node}")
+
     if isinstance(nodes, (tuple, list, dict)):
         try:
             nodes_iter = nodes.items() if isinstance(nodes, dict) else nodes
-            return reduce(_add_analyse_node, nodes_iter, {})
+            for node in nodes_iter:
+                analyse_insert_node(node)
+            return analysed_nodes
         except ConfigSyntaxError as e:
             raise ConfigSyntaxError(f"Invalid nodes {nodes}") from e
     else:
@@ -101,41 +102,38 @@ def _analyse_edge_id(edge_id) -> tuple[int, int]:
         raise ConfigSyntaxError(f"Invalid edge ID {edge_id}")
 
 
-def _add_analyse_edge(
-    edges: tuple[EdgeToAmpl, EdgeToAmpl], edge
-) -> tuple[EdgeToAmpl, EdgeToAmpl]:
-    forward_edges, backward_edges = edges
-    if isinstance(edge, (tuple, list)) and len(edge) == 2:
-        try:
-            lhs, rhs = _analyse_edge_id(edge[0])
-            coupling = _analyse_number(edge[1])
-            if (
-                (lhs, rhs) in forward_edges
-                or (rhs, lhs) in forward_edges
-                or (lhs, rhs) in backward_edges
-                or (rhs, lhs) in backward_edges
-            ):
-                raise ConfigSyntaxError(
-                    f"Duplicated edge ID {(lhs, rhs)}, {(rhs, lhs)}"
-                )
-            else:
-                forward_edges[(lhs, rhs)] = coupling
-                backward_edges[(rhs, lhs)] = coupling
-                return forward_edges, backward_edges
-        except ConfigSyntaxError as e:
-            raise ConfigSyntaxError(f"Invalid edge {edge}") from e
-    else:
-        raise ConfigSyntaxError(f"Invalid edge {edge}")
-
-
 def _analyse_edges(edges) -> EdgeToAmpl:
+    forward_edges = {}
+    backward_edges = {}
+
+    def analyse_insert_edge(edge) -> None:
+        if isinstance(edge, (tuple, list)) and len(edge) == 2:
+            try:
+                lhs, rhs = _analyse_edge_id(edge[0])
+                coupling = _analyse_number(edge[1])
+                if (
+                        (lhs, rhs) in forward_edges
+                        or (rhs, lhs) in forward_edges
+                        or (lhs, rhs) in backward_edges
+                        or (rhs, lhs) in backward_edges
+                ):
+                    raise ConfigSyntaxError(
+                        f"Duplicated edge ID {(lhs, rhs)}, {(rhs, lhs)}"
+                    )
+                else:
+                    forward_edges[(lhs, rhs)] = coupling
+                    backward_edges[(rhs, lhs)] = coupling
+            except ConfigSyntaxError as e:
+                raise ConfigSyntaxError(f"Invalid edge {edge}") from e
+        else:
+            raise ConfigSyntaxError(f"Invalid edge {edge}")
+
     if isinstance(edges, (dict, tuple, list)):
         try:
             edges_iter = edges.items() if isinstance(edges, dict) else edges
-            # order of edges is important, one relies on it
-            forward_edges, backward_edges = reduce(
-                _add_analyse_edge, edges_iter, ({}, {})
-            )
+            # order of edges is important, one relies on it later
+            for edge in edges_iter:
+                analyse_insert_edge(edge)
             return forward_edges | backward_edges
         except ConfigSyntaxError as e:
             raise ConfigSyntaxError(f"Invalid edges {edges}") from e

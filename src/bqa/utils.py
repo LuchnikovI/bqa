@@ -8,7 +8,7 @@ T = TypeVar("T")
 
 @lru_cache(None)
 def dispatch_precision(single: T, double: T) -> T:
-    precision = (environ.get("BQA_PRECISION") or "single").lower()
+    precision = (environ.get("BQA_PRECISION") or "double").lower()
     if precision == "single":
         return single
     elif precision == "double":
