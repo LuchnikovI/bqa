@@ -460,9 +460,11 @@ class Tensor(ABC, Generic[RawTensor]):
         return up._batch_concatenate(down, axis)
 
     def apply_conditional_z_gates(self, couplings: Iterable[Self]) -> Self:
+
         def reduction_func(acc: Self, axis_and_coupling: tuple[int, Self]) -> Self:
             axis, coupling = axis_and_coupling
             return acc._apply_conditional_z_gate_to_single_axis(axis, coupling)
+
         return reduce(reduction_func, ((i + 1, c) for i, c in enumerate(couplings)), self).batch_normalize()
 
     def extend_msgs(self) -> Self:
