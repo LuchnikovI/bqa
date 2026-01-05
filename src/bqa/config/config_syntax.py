@@ -1,4 +1,5 @@
 from typing import Any
+from bqa.backends import BACKEND_STR_TO_BACKEND
 from bqa.config.schedule_syntax import DEFAULT_SCHEDULE, _analyse_schedule
 from bqa.config.utils import (
     ConfigSyntaxError,
@@ -42,19 +43,14 @@ DEFAULT_MEASUREMENT_THRESHOLD = 0.95
 
 DEFAULT_SEED = 42
 
-# syntax analysis
-
-BACKENDS = {"numpy"}
-
-
 def _analyse_backend(backend) -> str:
     if isinstance(backend, str):
-        if backend not in BACKENDS:
-            raise ConfigSyntaxError(f"Unknown backend {backend}")
+        if backend not in BACKEND_STR_TO_BACKEND:
+            raise ConfigSyntaxError(f"Unknown backend \"{backend}\", available backends {BACKEND_STR_TO_BACKEND}")
         else:
             return backend
     else:
-        raise ConfigSyntaxError(f"Invalid backend {backend}")
+        raise ConfigSyntaxError(f"Invalid backend \"{backend}\"")
 
 
 def _analyse_nodes(nodes) -> NodeToAmpl:

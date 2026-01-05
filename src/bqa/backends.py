@@ -1,3 +1,4 @@
+import logging
 from functools import reduce
 from math import cos, prod, sin, sqrt
 from typing import Iterable, Optional, Self, Sequence, TypeVar, Generic, Callable
@@ -5,14 +6,15 @@ from abc import ABC, abstractmethod
 import numpy as np
 from numpy.typing import NDArray
 from numpy.linalg import svd
-from bqa.utils import NP_DTYPE
+from bqa.utils import NP_DTYPE, dispatch_precision
 
+log = logging.getLogger(__name__)
 
 SQRT_NEG_1J = sqrt(2.) / 2. - 1j * sqrt(2.) / 2.
 
-
 RawTensor = TypeVar("RawTensor")
 
+BACKEND_STR_TO_BACKEND = {}
 
 class Tensor(ABC, Generic[RawTensor]):
 
@@ -687,3 +689,195 @@ class NumPyBackend(Tensor):
     @staticmethod
     def compute_minimal_rank_from_raw_lmbds(lmbds: NDArray, eps: float) -> int:
         return int(np.max((lmbds > eps).sum(-1)))
+
+BACKEND_STR_TO_BACKEND["numpy"] = NumPyBackend
+
+try:
+    import cupy as cp
+    from cupy.typing import NDArray as CNDArray
+    CP_DTYPE = dispatch_precision(cp.complex64, cp.complex128)
+
+    class CuPyBackend(Tensor):
+
+        def __init__(self, tensor: CNDArray):
+            self._tensor = tensor
+
+        @classmethod
+        def make_from_list(cls, lst: list) -> Self:
+            dtype = cp.intp if lst and isinstance(lst[0], int) else CP_DTYPE
+            return cls(cp.array(lst, dtype=dtype))
+
+        @classmethod
+        def make_from_numpy(cls, arr: NDArray) -> Self:
+            return cls(cp.array(arr))
+
+        @classmethod
+        def make_from_raw_tensor(cls, raw_tensor: CNDArray) -> Self:
+            return cls(raw_tensor)
+
+        @property
+        def raw_tensor(self) -> CNDArray:
+            return self._tensor
+
+        @property
+        def numpy(self) -> NDArray:
+            return np.array(self._tensor)
+
+        @staticmethod
+        def batch_gather_raw_tensor(raw_tensor: CNDArray, indices: CNDArray) -> CNDArray:
+            return raw_tensor[indices]
+
+        @staticmethod
+        def get_batched_raw_tensor_l2_norm(raw_tensor: CNDArray) -> CNDArray:
+            shape = raw_tensor.shape
+            rank = len(shape) - 1
+            batch_size = shape[0]
+            assert rank >= 0, shape
+            raw_tensor_reshaped = raw_tensor.reshape((batch_size, -1))
+            norms = cp.linalg.norm(raw_tensor_reshaped, axis=1)
+            return norms
+
+        @staticmethod
+        def get_raw_tensor_l2_norm(raw_tensor: CNDArray) -> float:
+            return float(cp.linalg.norm(raw_tensor))
+
+        @staticmethod
+        def get_batched_raw_tensor_trace(raw_tensor: CNDArray) -> CNDArray:
+            return cp.trace(raw_tensor, axis1=-2, axis2=-1)
+
+        @staticmethod
+        def apply_x_to_phys_dim_raw(raw_tensor: CNDArray) -> CNDArray:
+            return raw_tensor[:, ::-1]
+
+        @staticmethod
+        def apply_z_to_phys_dim_raw(raw_tensor: CNDArray) -> CNDArray:
+            new_raw_tensor = raw_tensor.copy()
+            new_raw_tensor[:, 1] *= -1.
+            return  new_raw_tensor
+
+        @staticmethod
+        def make_empty_raw_tensor(batch_size: int, shape: tuple[int, ...]) -> CNDArray:
+            return cp.empty((batch_size, *shape), CP_DTYPE)
+
+        @staticmethod
+        def assign_at_batch_indices_raw(
+            dst_raw_tensor: CNDArray, src_raw_tensor: CNDArray, indices: CNDArray
+        ) -> CNDArray:
+            dst_raw_tensor[indices] = src_raw_tensor
+            return dst_raw_tensor
+
+        @staticmethod
+        def get_raw_tensor_shape(raw_tensor: CNDArray) -> tuple[int, ...]:
+            return raw_tensor.shape
+
+        @staticmethod
+        def inverse_raw_tensor_elementwise(raw_tensor: CNDArray) -> CNDArray:
+            return 1 / raw_tensor
+
+        @staticmethod
+        def batch_reshape_raw_tensor(
+            raw_tensor: CNDArray, shape: tuple[int, ...]
+        ) -> CNDArray:
+            batch_size = raw_tensor.shape[0]
+            return raw_tensor.reshape((batch_size, *shape))
+
+        @staticmethod
+        def turn_raw_tensor_last_index_into_diag_matrix(raw_tensor: CNDArray) -> CNDArray:
+            last_index_dim = raw_tensor.shape[-1]
+            return raw_tensor[..., np.newaxis] * cp.eye(last_index_dim)
+
+        @staticmethod
+        def complex_conj_raw_tensor(raw_tensor: CNDArray) -> CNDArray:
+            return raw_tensor.conj()
+
+        @staticmethod
+        def batch_matmul_raw_tensor(
+            lhs_raw_tensor: CNDArray, rhs_raw_tensor: CNDArray
+        ) -> CNDArray:
+            return lhs_raw_tensor @ rhs_raw_tensor
+
+        @staticmethod
+        def batch_transpose_raw_tensor(
+            raw_tensor: CNDArray, index_order: tuple[int, ...]
+        ) -> CNDArray:
+            index_order_shifted = (0, *(i + 1 for i in index_order))
+            return raw_tensor.transpose(index_order_shifted)
+
+        @staticmethod
+        def take_raw_tensor_elementwise_sqrt(raw_tensor: CNDArray) -> CNDArray:
+            return cp.sqrt(raw_tensor)
+
+        @staticmethod
+        def take_raw_tensor_batch_slice(
+            raw_tensor: CNDArray, start: int, end: int
+        ) -> CNDArray:
+            return raw_tensor[start:end]
+
+        @staticmethod
+        def broadcasted_mul_raw_tensors(lhs: CNDArray, rhs: CNDArray) -> CNDArray:
+            return lhs * rhs
+
+        @staticmethod
+        def broadcasted_sum_raw_tensors(lhs: CNDArray, rhs: CNDArray) -> CNDArray:
+            return lhs + rhs
+
+        @staticmethod
+        def broadcasted_sub_raw_tensors(lhs: CNDArray, rhs: CNDArray) -> CNDArray:
+            return lhs - rhs
+
+        @staticmethod
+        def get_batch_raw_tensor_svd_in_subspace(
+            raw_tensor: CNDArray,
+            pinv_eps: float,
+        ) -> tuple[CNDArray, CNDArray, CNDArray]:
+            u, s, vh = cp.linalg.svd(raw_tensor, full_matrices=False)
+            mask = s > pinv_eps
+            s = (s * mask).astype(CP_DTYPE)
+            return u * mask[..., np.newaxis, :], s.astype(CP_DTYPE), vh * mask[..., np.newaxis]
+
+        @staticmethod
+        def get_raw_tensor_elementwise_pinv(raw_tensor: CNDArray) -> CNDArray:
+            dtype = raw_tensor.dtype
+            return cp.divide(
+                1.0,
+                raw_tensor,
+                out=cp.zeros_like(raw_tensor, dtype),
+                where=raw_tensor > cp.finfo(CP_DTYPE).eps,
+            )
+
+        @staticmethod
+        def measure_raw_tensor_by_position_in_place(
+            raw_tensor: CNDArray, position: int, outcome
+        ) -> None:
+            raw_tensor[position, 0 if outcome else 1] = 0.0
+            raw_tensor[position, 1 if outcome else 0] = 1.0
+
+        @staticmethod
+        def truncate_raw_tensor(raw_tensor: CNDArray, dims: Sequence[int]) -> CNDArray:
+            return raw_tensor[tuple(slice(0, d) for d in dims)]
+
+        @staticmethod
+        def mul_by_float(raw_tensor: CNDArray, val: float | complex | int) -> CNDArray:
+            return raw_tensor * val
+
+        @staticmethod
+        def get_sin_raw_tensor(raw_tensor: CNDArray) -> CNDArray:
+            return cp.sin(raw_tensor)
+
+        @staticmethod
+        def get_cos_raw_tensor(raw_tensor: CNDArray) -> CNDArray:
+            return cp.cos(raw_tensor)
+
+        @staticmethod
+        def concatenate_raw_tensors(lhs: CNDArray, rhs: CNDArray, axis: int) -> CNDArray:
+            return cp.concatenate([lhs, rhs], axis)
+
+        @staticmethod
+        def compute_minimal_rank_from_raw_lmbds(lmbds: CNDArray, eps: float) -> int:
+            return int(cp.max((lmbds > eps).sum(-1)))
+
+    BACKEND_STR_TO_BACKEND["cupy"] = CuPyBackend
+
+except ImportError as _:
+
+    log.warning("CuPy is not present, the corresponding cupy backend is now awailable")

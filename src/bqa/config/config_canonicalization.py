@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import Iterable, Iterator, Type, TypeVar
 from numpy import array_equal, isclose
-from bqa.backends import NumPyBackend, Tensor
+from bqa.backends import Tensor, BACKEND_STR_TO_BACKEND
 from bqa.config.config_syntax import Config, Edge, EdgeToAmpl, NodeToAmpl
 from bqa.config.schedule_canonicalization import Instruction, _canonicalize_schedule
 from bqa.config.utils import vectorized_append
@@ -15,9 +15,6 @@ Graph = list[list[int]]
 DictLayout = dict  # dict[str, list[list[int]] | list[int]]
 
 EdgeToPosition = dict[Edge, int]
-
-BACKEND_STR_TO_BACKEND = {"numpy": NumPyBackend}
-
 
 @dataclass
 class Layout:
