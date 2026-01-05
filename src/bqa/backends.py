@@ -471,7 +471,8 @@ class Tensor(ABC, Generic[RawTensor]):
         d, d_rhs = self.batch_shape
         assert d == d_rhs
         eye = self.make_from_numpy(np.eye(2, dtype=NP_DTYPE).reshape((1, 2, 2, 1, 1)))
-        return (self.batch_reshape((1, 1, d, d)) * eye).batch_reshape((2 * d, 2 * d))
+        extended_msgs = (self.batch_reshape((1, 1, d, d)) * eye).batch_transpose((0, 2, 1, 3)).batch_reshape((2 * d, 2 * d))
+        return extended_msgs.batch_trace_normalize()
 
     def compute_minimal_rank_from_lmbd(self, eps: float) -> int:
         return self.compute_minimal_rank_from_raw_lmbds(self.raw_tensor, eps)
