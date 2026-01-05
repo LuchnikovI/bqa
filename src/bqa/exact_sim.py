@@ -1,9 +1,14 @@
 import numpy as np
 from numpy.typing import NDArray
 from numpy.random import uniform
-from qem import QuantumState
 from bqa.config.config_canonicalization import Context
 from bqa.config.core import config_to_context
+
+try:
+    from qem import QuantumState
+except ImportError as e:
+    print("Exact quantum computing simulator is not install. To instal it one needs: \n1) install rust (see https://rust-lang.org/tools/install/) \n2) install maturin (pip install maturin) \n3) install bqa with test deps (poetry install --with test).")
+    raise e
 
 FLIPPED_HADAMARD = (1. / np.sqrt(2.)) * np.array([
     [1, 1],

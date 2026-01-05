@@ -12,6 +12,9 @@ from bqa.config.core import config_to_context
 from bqa.state import State, _initialize_state, _apply_z_layer, get_density_matrices, _run_bp, _set_to_vidal_gauge, _set_to_symmetric_gauge
 from bqa.utils import NP_DTYPE
 
+# Note that Vidal gauge breakes when maximal rank of TN is overestimated
+# this is due to the pinv of sqrt(m)
+
 logging.basicConfig(
     level=logging.DEBUG,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -222,6 +225,8 @@ def test_vg_and_sg_small_tree_circuit():
     rng = default_rng(43)
     context = config_to_context(SMALL_TREE_CONFIG)
     state = _initialize_state(context)
+    _apply_z_layer(context, 0., state)
+    _apply_z_layer(context, 0., state)
     _apply_z_layer(context, 0., state)
     _apply_z_layer(context, 0., state)
     randomized_tensors_in_state(state, rng)

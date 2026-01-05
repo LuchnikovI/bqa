@@ -1,6 +1,10 @@
 import numpy as np
 from bqa.core import run_qa
-from .exact_sim import run_qa_exact
+from bqa.exact_sim import run_qa_exact
+
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
 
 CONFIG = {
     "nodes" : {0 : 1., 1 : -1., 2 : 0.5, 3 : -0.5, 4: 1.1, 5 : 0.4},
@@ -12,3 +16,4 @@ CONFIG = {
 
 def test_small_circuit_final_density():
     assert np.linalg.norm(run_qa(CONFIG)[0] - run_qa_exact(CONFIG)[0]) < 1e-5
+

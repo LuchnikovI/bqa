@@ -62,7 +62,6 @@ def _make_degree_to_layout(
     graph: Graph,
     edge_to_msg_position: EdgeToPosition,
     edge_to_lmbd_position: EdgeToPosition,
-    default_field: float,
     node_to_ampl: NodeToAmpl,
     edge_to_ampl: EdgeToAmpl,
     backend: Type[Tensor],
@@ -88,7 +87,7 @@ def _make_degree_to_layout(
         degree = len(nghbrng_ids)
         layout = get_layout_or_default(degree)
         layout["node_ids"].append(node_id)
-        layout["node_ampls"].append(node_to_ampl.get(node_id, default_field))
+        layout["node_ampls"].append(node_to_ampl[node_id])
         vectorized_append(
             layout["input_msgs_position"],
             (edge_to_msg_position[(src_id, node_id)] for src_id in nghbrng_ids),
@@ -212,6 +211,10 @@ def _canonicalize_config(config: Config) -> Context:
     graph = _make_graph(config, nodes_number)
     edge_to_msg_position = _make_edge_to_msg_position(config)
     edge_to_lmbd_position = _make_edge_to_lmbd_position(config)
+    default_field = config["default_field"]
+    edge_to_ampl = config["edges"]
+    node_to_ampl = {node_id : config["nodes"].get(node_id, default_field) for node_id in range(nodes_number)}
+    config["nodes"]
     msg_position_to_lmbd_position = _make_msg_position_to_lmbd_position(
         edges_number, backend
     )
@@ -219,9 +222,8 @@ def _canonicalize_config(config: Config) -> Context:
         graph,
         edge_to_msg_position,
         edge_to_lmbd_position,
-        config["default_field"],
-        config["nodes"],
-        config["edges"],
+        node_to_ampl,
+        edge_to_ampl,
         backend,
     )
     return Context(
@@ -239,8 +241,8 @@ def _canonicalize_config(config: Config) -> Context:
         degree_to_layout,
         _make_paths_to_tensors(degree_to_layout),
         list(_canonicalize_schedule(config["schedule"])),
-        config["edges"],
-        config["nodes"],
+        edge_to_ampl,
+        node_to_ampl,
         edge_to_msg_position,
         edge_to_lmbd_position,
     )
