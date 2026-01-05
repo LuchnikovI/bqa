@@ -34,7 +34,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           pip install poetry
-          poetry install --no-root --with test
+          poetry install --with test
 
       - name: Run tests
         run: |
