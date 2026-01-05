@@ -8,12 +8,11 @@ It uses belief propagation based approximate inference (see https://arxiv.org/ab
 1) Clone this repo;
 2) Run `pip install .` from the clonned repo under your python environment.
 
-To validate computation results some examples and tests require the exact quantum circuits simulator from https://github.com/LuchnikovI/qem.
-To install it do the following:
+To validate the computation results, some examples and tests rely on an exact quantum circuit simulator available at https://github.com/LuchnikovI/qem. To install it, follow the steps below:
 
 1) Clone the repo https://github.com/LuchnikovI/qem;
 2) Install rust (see https://rust-lang.org/tools/install/);
-3) Install maturing by running `pip install maturin .`;
+3) Install `maturin` by running `pip install maturin .`;
 4) Run `pip install .` from the clonned repo under your python environment.
 
 ## How to use?
