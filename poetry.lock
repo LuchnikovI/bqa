@@ -195,5 +195,5 @@ resolved_reference = "8156bfd29d59fa8f1bdff26ae9331a455b5a2c38"
 
 [metadata]
 lock-version = "2.1"
-python-versions = ">=3.13,<4.0"
-content-hash = "d8fa21da34bc5797ec4094b9aeb14edc8026decfb6a086a3be19827ce5c5d4bc"
+python-versions = ">=3.11,<4.0"
+content-hash = "f2524fd57d5a2a2ef7848601ca9c905c4fce17c40938471a206b17b821ddc765"
