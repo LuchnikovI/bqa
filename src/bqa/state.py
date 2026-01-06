@@ -110,7 +110,7 @@ def _run_bp(context: Context, state: State) -> None:
             new_output_msgs = tensor.pass_msgs(aligned_msgs)
             for ms, poss in zip(new_output_msgs, output_msgs_position):
                 new_msgs.assign_at_batch_indices(ms, poss)
-        dist = new_msgs.get_dist(state.msgs)
+        dist = new_msgs.get_dist(state.msgs).numpy
         log.debug(f"Distance between subsequent messages {dist}")
         if dist < bp_eps:
             log.debug(f"BP algorithm completed after {iter_num} iterations")

@@ -62,7 +62,7 @@ class Tensor(ABC, Generic[RawTensor]):
 
     @staticmethod
     @abstractmethod
-    def get_raw_tensor_max_norm(raw_tensor: RawTensor) -> float:
+    def get_raw_tensor_max_norm(raw_tensor: RawTensor) -> RawTensor:
         pass
 
     @staticmethod
@@ -211,6 +211,11 @@ class Tensor(ABC, Generic[RawTensor]):
     @staticmethod
     @abstractmethod
     def compute_minimal_rank_from_raw_lmbds(lmbds: RawTensor, eps: float) -> int:
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def div_raw_tensors_elementwise(lhs: RawTensor, rhs: RawTensor) -> RawTensor:
         pass
 
     # rest are implementations in terms of abstract methods (do not overload)
@@ -431,8 +436,10 @@ class Tensor(ABC, Generic[RawTensor]):
         ul = u * lmbd_sqrt_pinv.batch_reshape((1, lmbd_size))
         return ul, lu
 
-    def get_dist(self, other: Self) -> float:
-        return self.get_raw_tensor_max_norm((self - other).raw_tensor) / self.get_raw_tensor_max_norm((self + other).raw_tensor)
+    def get_dist(self, other: Self) -> Self:
+        num = (self - other).apply_to_raw_tensor(self.get_raw_tensor_max_norm)
+        denom = (self + other).apply_to_raw_tensor(self.get_raw_tensor_max_norm)
+        return  num / denom
 
     def batch_concat(self, other: Self) -> Self:
         return self.apply_to_raw_tensor(self.concatenate_raw_tensors, other.raw_tensor, 0)
@@ -510,6 +517,9 @@ class Tensor(ABC, Generic[RawTensor]):
             self.broadcasted_sub_raw_tensors, other.raw_tensor
         )
 
+    def __truediv__(self, other: Self) -> Self:
+        return self.apply_to_raw_tensor(self.div_raw_tensors_elementwise, other.raw_tensor)
+
 # NumPy backend
 
 class NumPyBackend(Tensor):
@@ -553,8 +563,8 @@ class NumPyBackend(Tensor):
         return norms
 
     @staticmethod
-    def get_raw_tensor_max_norm(raw_tensor: NDArray) -> float:
-        return float(np.abs(raw_tensor).max())
+    def get_raw_tensor_max_norm(raw_tensor: NDArray) -> NDArray:
+        return np.abs(raw_tensor).max()
 
     @staticmethod
     def get_batched_raw_tensor_trace(raw_tensor: NDArray) -> NDArray:
@@ -691,6 +701,10 @@ class NumPyBackend(Tensor):
     def compute_minimal_rank_from_raw_lmbds(lmbds: NDArray, eps: float) -> int:
         return int(np.max((lmbds > eps).sum(-1)))
 
+    @staticmethod
+    def div_raw_tensors_elementwise(lhs: NDArray, rhs: NDArray) -> NDArray:
+        return lhs / rhs
+
 BACKEND_STR_TO_BACKEND["numpy"] = NumPyBackend
 
 # CuPy backend
@@ -743,8 +757,8 @@ try:
             return norms
 
         @staticmethod
-        def get_raw_tensor_max_norm(raw_tensor) -> float:
-            return float(cp.abs(raw_tensor).max())
+        def get_raw_tensor_max_norm(raw_tensor):
+            return cp.abs(raw_tensor).max()
 
         @staticmethod
         def get_batched_raw_tensor_trace(raw_tensor):
@@ -878,6 +892,10 @@ try:
         @staticmethod
         def compute_minimal_rank_from_raw_lmbds(lmbds, eps: float) -> int:
             return int(cp.max((lmbds > eps).sum(-1)))
+
+        @staticmethod
+        def div_raw_tensors_elementwise(lhs, rhs):
+            return lhs / rhs
 
     BACKEND_STR_TO_BACKEND["cupy"] = CuPyBackend
 
