@@ -140,8 +140,7 @@ def _apply_x_layer(xtime: float, state: State) -> None:
 
 
 def _truncate_vidal_gauge(context: Context, state: State) -> None:
-    max_rank = state.lmbds.compute_minimal_rank_from_lmbd(context.pinv_eps)
-    bond_dim = min(max_rank, context.max_bond_dim)
+    bond_dim = context.max_bond_dim
     truncated_degree_to_tensor = {d : t.batch_truncate_all_but(bond_dim, [0]) for d, t in state.degree_to_tensor.items()}
     truncated_lmbds = state.lmbds.batch_truncate_all_but(bond_dim)
     state.degree_to_tensor = truncated_degree_to_tensor
