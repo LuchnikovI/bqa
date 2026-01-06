@@ -62,7 +62,7 @@ class Tensor(ABC, Generic[RawTensor]):
 
     @staticmethod
     @abstractmethod
-    def get_raw_tensor_l2_norm(raw_tensor: RawTensor) -> float:
+    def get_raw_tensor_max_norm(raw_tensor: RawTensor) -> float:
         pass
 
     @staticmethod
@@ -432,7 +432,7 @@ class Tensor(ABC, Generic[RawTensor]):
         return ul, lu
 
     def get_dist(self, other: Self) -> float:
-        return self.get_raw_tensor_l2_norm((self - other).raw_tensor) / self.get_raw_tensor_l2_norm((self + other).raw_tensor)
+        return self.get_raw_tensor_max_norm((self - other).raw_tensor) / self.get_raw_tensor_max_norm((self + other).raw_tensor)
 
     def batch_concat(self, other: Self) -> Self:
         return self.apply_to_raw_tensor(self.concatenate_raw_tensors, other.raw_tensor, 0)
@@ -510,6 +510,7 @@ class Tensor(ABC, Generic[RawTensor]):
             self.broadcasted_sub_raw_tensors, other.raw_tensor
         )
 
+# NumPy backend
 
 class NumPyBackend(Tensor):
 
@@ -552,8 +553,8 @@ class NumPyBackend(Tensor):
         return norms
 
     @staticmethod
-    def get_raw_tensor_l2_norm(raw_tensor: NDArray) -> float:
-        return float(np.linalg.norm(raw_tensor))
+    def get_raw_tensor_max_norm(raw_tensor: NDArray) -> float:
+        return float(np.abs(raw_tensor).max())
 
     @staticmethod
     def get_batched_raw_tensor_trace(raw_tensor: NDArray) -> NDArray:
@@ -692,6 +693,8 @@ class NumPyBackend(Tensor):
 
 BACKEND_STR_TO_BACKEND["numpy"] = NumPyBackend
 
+# CuPy backend
+
 try:
     import cupy as cp
     CP_DTYPE = dispatch_precision(cp.complex64, cp.complex128)
@@ -740,8 +743,8 @@ try:
             return norms
 
         @staticmethod
-        def get_raw_tensor_l2_norm(raw_tensor) -> float:
-            return float(cp.linalg.norm(raw_tensor))
+        def get_raw_tensor_max_norm(raw_tensor) -> float:
+            return float(cp.abs(raw_tensor).max())
 
         @staticmethod
         def get_batched_raw_tensor_trace(raw_tensor):
