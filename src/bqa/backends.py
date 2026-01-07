@@ -740,7 +740,7 @@ try:
 
         @property
         def numpy(self) -> NDArray:
-            return cp.asnumpy(self._tensor)
+            return self._tensor.get()
 
         @staticmethod
         def batch_gather_raw_tensor(raw_tensor, indices):

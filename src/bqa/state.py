@@ -110,12 +110,11 @@ def _run_bp(context: Context, state: State) -> None:
             new_output_msgs = tensor.pass_msgs(aligned_msgs)
             for ms, poss in zip(new_output_msgs, output_msgs_position):
                 new_msgs.assign_at_batch_indices(ms, poss)
-        if iter_num % 10 == 0:
-            dist = new_msgs.get_dist(state.msgs).numpy
-            log.debug(f"Iteration {iter_num}, distance between subsequent messages {dist}")
-            if dist < bp_eps:
-                log.debug(f"BP algorithm completed after {iter_num} iterations")
-                return
+        dist = new_msgs.get_dist(state.msgs).numpy
+        log.debug(f"Iteration {iter_num}, distance between subsequent messages {dist}")
+        if dist < bp_eps:
+            log.debug(f"BP algorithm completed after {iter_num} iterations")
+            return
         state.msgs = new_msgs
     log.warning(f"BP algorithm exceeds iterations limit set to {max_bp_iters}")
 
