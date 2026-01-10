@@ -101,8 +101,8 @@ def _run_bp(context: Context, state: State) -> None:
     bond_dim = state.bond_dim
     bp_eps = context.bp_eps
     max_bp_iters = context.max_bp_iters_number
+    new_msgs = context.backend.make_empty(context.edges_number, (bond_dim, bond_dim))
     for iter_num in range(context.max_bp_iters_number):
-        new_msgs = context.backend.make_empty(context.edges_number, (bond_dim, bond_dim))
         for degree, tensor in state.degree_to_tensor.items():
             input_msgs_position = context.degree_to_layout[degree].input_msgs_position
             output_msgs_position = context.degree_to_layout[degree].output_msgs_position
@@ -115,7 +115,7 @@ def _run_bp(context: Context, state: State) -> None:
         if dist < bp_eps:
             log.debug(f"BP algorithm completed after {iter_num} iterations")
             return
-        state.msgs = new_msgs
+        state.msgs, new_msgs = new_msgs, state.msgs
     log.warning(f"BP algorithm exceeds iterations limit set to {max_bp_iters}")
 
 
