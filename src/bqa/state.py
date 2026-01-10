@@ -237,23 +237,22 @@ def measure(context: Context, state: State) -> list:
         apply_and_register_measurement(1, node_id)
 
     def measure_nodes_above_threshold(not_measured_nodes: dict[int, float]) -> None:
-        for node_id in (
-            node_id for node_id, prob in not_measured_nodes.items() if prob > threshold
-        ):
+        above_thrshld = list(node_id for node_id, prob in not_measured_nodes.items() if prob > threshold)
+        for node_id in above_thrshld:
             apply_and_register_0_measurement(node_id)
+        log.debug(f"Nodes {above_thrshld} were above threshold and have been projected up")
 
     def measure_nodes_below_threshold(not_measured_nodes: dict[int, float]) -> None:
-        for node_id in (
-            node_id
-            for node_id, prob in not_measured_nodes.items()
-            if prob < 1.0 - threshold
-        ):
+        below_thrshld = list(node_id for node_id, prob in not_measured_nodes.items() if prob < 1.0 - threshold)
+        for node_id in below_thrshld:
             apply_and_register_1_measurement(node_id)
+        log.debug(f"Nodes {below_thrshld} were below threshold and have been projected down")
 
     while is_not_all_measured():
         not_measured_ground_probs = get_not_measured_ground_probs()
         node_id, prob = min(not_measured_ground_probs.items(), key=get_z_abs_value)
         measurement_outcome = sample_outcome(prob)
+        log.debug(f"Node {node_id} had highest uncertainty and has been measured")
         apply_and_register_measurement(measurement_outcome, node_id)
         _run_bp(context, state)
         not_measured_ground_probs = get_not_measured_ground_probs()
