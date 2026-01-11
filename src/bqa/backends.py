@@ -675,7 +675,8 @@ class NumPyBackend(Tensor):
         raw_tensor: NDArray, position: int, outcome
     ) -> None:
         raw_tensor[position, 0 if outcome else 1] = 0.0
-        raw_tensor[position, 1 if outcome else 0] = 1.0
+        raw_tensor /= np.linalg.norm(raw_tensor)
+
 
     @staticmethod
     def truncate_raw_tensor(raw_tensor: NDArray, dims: Sequence[int]) -> NDArray:
@@ -867,7 +868,8 @@ try:
             raw_tensor, position: int, outcome
         ) -> None:
             raw_tensor[position, 0 if outcome else 1] = 0.0
-            raw_tensor[position, 1 if outcome else 0] = 1.0
+            raw_tensor /= cp.linalg.norm(raw_tensor)
+
 
         @staticmethod
         def truncate_raw_tensor(raw_tensor, dims: Sequence[int]):
