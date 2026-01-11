@@ -63,7 +63,7 @@ def _run_layer_sv(context: Context, xtime: float, ztime: float, state: QuantumSt
 
 # in the given API it is problematic to fix a seed, so we do not do this and the computation is not reproducable
 def _measure_sv(context: Context, state: QuantumState) -> list:
-    return [state.measure(pos, uniform(0., 1., 1)) for pos in range(context.nodes_number)]
+    return [1 - 2 * state.measure(pos, uniform(0., 1., 1)) for pos in range(context.nodes_number)]
 
 def _get_density_matrices_sv(context: Context, state: QuantumState) -> NDArray:
     return np.concatenate([state.dens1(pos)[np.newaxis] for pos in range(context.nodes_number)], axis=0)

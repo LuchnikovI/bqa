@@ -226,7 +226,7 @@ def measure(context: Context, state: State) -> list:
         measurement_outcome: int,
         node_id: int,
     ) -> None:
-        measurement_outcomes[node_id] = measurement_outcome
+        measurement_outcomes[node_id] = 1 - 2 * measurement_outcome
         degree, pos = context.path_to_tensors[node_id]
         state.degree_to_tensor[degree].measure(pos, measurement_outcome)
 
