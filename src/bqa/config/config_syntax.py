@@ -43,6 +43,8 @@ DEFAULT_MEASUREMENT_THRESHOLD = 0.95
 
 DEFAULT_SEED = 42
 
+DEFAULT_DAMPING = 0.
+
 def _analyse_backend(backend) -> str:
     if isinstance(backend, str):
         if backend not in BACKEND_STR_TO_BACKEND:
@@ -205,6 +207,12 @@ def _analyse_config(config) -> Config:
                 DEFAULT_SEED,
                 f"`seed` field is missing, set to {DEFAULT_SEED}",
             )
+            damping = _get_field_or_default_and_warn(
+                config,
+                "damping",
+                DEFAULT_DAMPING,
+                f"`damping` field is missing, set to {DEFAULT_DAMPING}",
+            )
             return {
                 "nodes": _analyse_nodes(nodes),
                 "edges": _analyse_edges(edges),
@@ -218,6 +226,7 @@ def _analyse_config(config) -> Config:
                 "measurement_threshold": _analyse_half_to_1_number(
                     measurement_threshold
                 ),
+                "damping": _analyse_0_to_1_number(damping),
                 "backend": _analyse_backend(backend),
             }
         except ConfigSyntaxError as e:

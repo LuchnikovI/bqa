@@ -115,7 +115,7 @@ def _run_bp(context: Context, state: State) -> None:
         if dist < bp_eps:
             log.debug(f"BP algorithm completed after {iter_num} iterations")
             return
-        state.msgs, new_msgs = new_msgs, state.msgs
+        state.msgs.make_inplace_damping_update(new_msgs, context.damping)
     log.warning(f"BP algorithm exceeds iterations limit set to {max_bp_iters}")
 
 

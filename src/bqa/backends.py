@@ -218,6 +218,11 @@ class Tensor(ABC, Generic[RawTensor]):
     def div_raw_tensors_elementwise(lhs: RawTensor, rhs: RawTensor) -> RawTensor:
         pass
 
+    @staticmethod
+    @abstractmethod
+    def make_inplace_damping_update_raw(dst: RawTensor, src: RawTensor, alpha: float) -> None:
+        pass
+
     # rest are implementations in terms of abstract methods (do not overload)
 
     @classmethod
@@ -486,6 +491,9 @@ class Tensor(ABC, Generic[RawTensor]):
     def compute_minimal_rank_from_lmbd(self, eps: float) -> int:
         return self.compute_minimal_rank_from_raw_lmbds(self.raw_tensor, eps)
 
+    def make_inplace_damping_update(self, src: Self, alpha) -> None:
+        self.make_inplace_damping_update_raw(self.raw_tensor, src.raw_tensor, alpha)
+
     def __str__(self):
         return f"{self.__class__.__name__}({self.raw_tensor.__str__()})"
 
@@ -706,6 +714,11 @@ class NumPyBackend(Tensor):
     def div_raw_tensors_elementwise(lhs: NDArray, rhs: NDArray) -> NDArray:
         return lhs / rhs
 
+    @staticmethod
+    def make_inplace_damping_update_raw(dst: NDArray, src: NDArray, alpha: float) -> None:
+        dst *= alpha
+        dst += (1. - alpha) * src
+
 BACKEND_STR_TO_BACKEND["numpy"] = NumPyBackend
 
 # CuPy backend
@@ -898,6 +911,11 @@ try:
         @staticmethod
         def div_raw_tensors_elementwise(lhs, rhs):
             return lhs / rhs
+
+        @staticmethod
+        def make_inplace_damping_update_raw(dst, src, alpha: float) -> None:
+            dst *= alpha
+            dst += (1. - alpha) * src
 
     BACKEND_STR_TO_BACKEND["cupy"] = CuPyBackend
 

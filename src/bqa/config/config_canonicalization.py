@@ -158,6 +158,7 @@ class Context:
     node_to_ampl: NodeToAmpl
     edge_to_msg_pos: EdgeToPosition
     edge_to_lmbd_pos: EdgeToPosition
+    damping: float
 
     @property
     def lmbds_number(self) -> int:
@@ -242,4 +243,5 @@ def _canonicalize_config(config: Config) -> Context:
         node_to_ampl,
         edge_to_msg_position,
         edge_to_lmbd_position,
+        config["damping"]
     )
