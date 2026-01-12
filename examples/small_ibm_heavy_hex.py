@@ -65,7 +65,9 @@ config = {
     "measurement_threshold" : 0.95, # ----> this is a confedence thresold which allows to skip measurement simulation
                                     #       and directly project state to the corresponding direction, it is optional, default value is 0.95
 
-    "damping" : 0., # --------------------> this is a coeficient in the messages update: m^(t + 1) = damping * m^(t) + (1 - damping) * m^new
+    "damping" : 0., # --------------------> this is a coeficient in the messages update
+                    #                       m^(t + 1) = damping * m^(t) + (1 - damping) * m^new
+                    #                       which is applied only at the measurements sampling stage.
                     #                       it is optional, default value is 0.
 
     "seed" : 42, # -----------------------> this is the random seed, it is optional, default value is 42

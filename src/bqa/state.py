@@ -96,7 +96,7 @@ def get_density_matrices(context: Context, state: State) -> NDArray:
     return density_matrices
 
 
-def _run_bp(context: Context, state: State) -> None:
+def _run_bp(context: Context, state: State, is_sampling_stage: bool = False) -> None:
     log.debug("BP algorithm has started")
     bond_dim = state.bond_dim
     bp_eps = context.bp_eps
@@ -115,7 +115,10 @@ def _run_bp(context: Context, state: State) -> None:
         if dist < bp_eps:
             log.debug(f"BP algorithm completed after {iter_num} iterations")
             return
-        state.msgs.make_inplace_damping_update(new_msgs, context.damping)
+        if is_sampling_stage:
+            state.msgs.make_inplace_damping_update(new_msgs, context.damping)
+        else:
+            state.msgs, new_msgs = new_msgs, state.msgs
     log.warning(f"BP algorithm exceeds iterations limit set to {max_bp_iters}")
 
 
@@ -254,15 +257,15 @@ def measure(context: Context, state: State) -> list:
         measurement_outcome = sample_outcome(prob)
         log.debug(f"Node {node_id} had highest uncertainty and has been measured")
         apply_and_register_measurement(measurement_outcome, node_id)
-        _run_bp(context, state)
+        _run_bp(context, state, is_sampling_stage=True)
         not_measured_ground_probs = get_not_measured_ground_probs()
         measure_nodes_above_threshold(not_measured_ground_probs)
         measure_nodes_below_threshold(not_measured_ground_probs)
-        _run_bp(context, state)
+        _run_bp(context, state, is_sampling_stage=True)
     _set_to_vidal_gauge(context, state)
     _truncate_vidal_gauge(context, state)
     _set_to_symmetric_gauge(context, state)
-    _run_bp(context, state)
+    _run_bp(context, state, is_sampling_stage=True)
     measurement_outcomes = [measurement_outcomes[node_id] for node_id in range(len(measurement_outcomes))]
     log.info("Sampling measurement outcomes completed")
     return measurement_outcomes
