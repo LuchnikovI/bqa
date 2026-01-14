@@ -1,7 +1,12 @@
+import sys
 import logging
 from functools import reduce
 from math import cos, prod, sin, sqrt
-from typing import Any, Iterable, Optional, Self, Sequence, TypeVar, Generic, Callable
+from typing import Any, Iterable, Optional, Sequence, TypeVar, Generic, Callable
+if sys.version_info >= (3, 11):
+    from typing import Self
+else:
+    from typing_extensions import Self
 from abc import ABC, abstractmethod
 import numpy as np
 from numpy.typing import NDArray
