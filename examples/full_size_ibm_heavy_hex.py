@@ -10,9 +10,9 @@ logging.basicConfig(
 )
 
 def get_rand_ampl(rng: Random) -> int:
-    return rng.randint(0, 1) - 1
+    return 2 * rng.randint(0, 1) - 1
 
-def get_full_size_heavy_hex_edges(rng: Random) -> dict[tuple[int, int], float]:
+def get_full_size_heavy_hex_edges_with_random_ampls(rng: Random) -> dict[tuple[int, int], float]:
     edges = {}
     for i in chain(range(13),
                    range(18, 32),
@@ -72,14 +72,17 @@ def get_full_size_heavy_hex_edges(rng: Random) -> dict[tuple[int, int], float]:
     edges[(112, 126)] = get_rand_ampl(rng)
     return edges
 
-def get_full_size_heavy_hex_nodes(rng: Random) -> dict[int, float]:
+def get_full_size_heavy_hex_nodes_with_random_ampls(rng: Random) -> dict[int, float]:
     return {node_id : get_rand_ampl(rng) for node_id in range(127)}
 
 rng = Random(42)
 
+nodes = get_full_size_heavy_hex_nodes_with_random_ampls(rng)
+edges = get_full_size_heavy_hex_edges_with_random_ampls(rng)
+
 config = {
-    "nodes" : get_full_size_heavy_hex_nodes(rng),
-    "edges" : get_full_size_heavy_hex_edges(rng),
+    "nodes" : nodes,
+    "edges" : edges,
     "max_bond_dim" : 8,
     "backend" : "numpy",
     "schedule" : {
@@ -87,11 +90,10 @@ config = {
         "starting_mixing" : 1.,
         "actions" : [
             {
-                "time" : 1.,
-                "steps_number" : 100,
+                "weight" : 1.,
+                "steps_number" : 10,
                 "final_mixing" : 0.0,
             },
-            "get_density_matrices",
             "measure",
         ]
     },

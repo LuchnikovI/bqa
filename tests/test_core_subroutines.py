@@ -7,7 +7,6 @@ from numpy.random import Generator, default_rng
 from numpy.typing import NDArray
 from bqa.backends import Tensor
 from bqa.config.config_canonicalization import Context
-from bqa.config.config_syntax import Edge
 from bqa.config.core import config_to_context
 from bqa.state import State, _initialize_state, _apply_z_layer, get_density_matrices, _run_bp, _set_to_vidal_gauge, _set_to_symmetric_gauge
 from bqa.utils import NP_DTYPE
@@ -27,11 +26,11 @@ def get_tensor(state: State, context: Context, node_id: int) -> NDArray:
     return state.degree_to_tensor[degree].numpy[pos]
 
 
-def get_lmbd(state: State, context: Context, edge: Edge) -> NDArray:
+def get_lmbd(state: State, context: Context, edge) -> NDArray:
     return state.lmbds.numpy[context.edge_to_lmbd_pos[edge]]
 
 
-def get_msg(state: State, context: Context, edge: Edge) -> NDArray:
+def get_msg(state: State, context: Context, edge) -> NDArray:
     return state.msgs.numpy[context.edge_to_msg_pos[edge]]
 
 
@@ -39,7 +38,7 @@ def get_contracted_branches(
         state: State,
         context: Context,
         is_vidal_gauge: bool = False,
-) -> dict[Edge, NDArray]:
+):
     graph = context.graph
 
     def apply_msg(t: NDArray, pm: tuple[int, NDArray]) -> NDArray:
@@ -49,12 +48,12 @@ def get_contracted_branches(
         mt = np.tensordot(t, m, ((p,), (1,)))
         return mt.transpose(indices_order)
 
-    def apply_lmbd(msg: NDArray, edge: Edge) -> NDArray:
+    def apply_lmbd(msg: NDArray, edge) -> NDArray:
         lmbd = get_lmbd(state, context, edge)
         return msg * lmbd[np.newaxis] * lmbd[:, np.newaxis]
 
     @cache
-    def get_msg(edge: Edge) -> NDArray:
+    def get_msg(edge) -> NDArray:
         src_id, dst_id = edge
         tensor = get_tensor(state, context, src_id)
         input_msgs = tuple((pos + 1, apply_lmbd(get_msg((s, src_id)), (s, src_id)) if is_vidal_gauge else get_msg((s, src_id)))
@@ -74,7 +73,7 @@ def get_contracted_branches(
 def contract_tree(state: State, context: Context, is_vidal_gauge: bool = False) -> NDArray:
     graph = context.graph
 
-    def contract_branch(edge: Edge) -> tuple[tuple[int, ...], NDArray]:
+    def contract_branch(edge) -> tuple[tuple[int, ...], NDArray]:
         src_id, dst_id = edge
         tensor = get_tensor(state, context, src_id)
         rank = len(tensor.shape)
@@ -125,7 +124,7 @@ def get_density_matrices_from_tensor(tensor: NDArray) -> NDArray:
 
 def split_nodes_by_edge(
         context: Context,
-        edge: Edge,
+        edge,
 ) -> tuple[tuple[int, ...], tuple[int, ...]]:
     graph = context.graph
     src_id, dst_id = edge
@@ -139,7 +138,7 @@ def split_nodes_by_edge(
     return (tuple(go_to_leafs(src_id, dst_id)), tuple(go_to_leafs(dst_id, src_id)))
 
 
-def get_tree_lmbds(context: Context, tensor: NDArray) -> dict[Edge, NDArray]:
+def get_tree_lmbds(context: Context, tensor: NDArray):
     lmbds = {}
     graph = context.graph
     for src_id, ns in enumerate(graph):
@@ -256,5 +255,4 @@ def test_vg_and_sg_small_tree_circuit():
     assert np.isclose(dens_before_canonicalization, dens_after_canonicalization).all()
     print("test_vg_small_tree_circuit: OK")
 
-test_vg_and_sg_small_tree_circuit()
 

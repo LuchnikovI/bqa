@@ -1,51 +1,33 @@
-from typing import Iterable
-from bqa.config.schedule_syntax import Action, Actions, Schedule
-
-Instruction = str | dict[str, float]
-
-
-def _extract_mixings(starting_mixing: float, actions: Actions) -> Iterable[float]:
-    mixing = starting_mixing
-    yield mixing
-    for action in actions:
-        if isinstance(action, dict):
-            mixing = action["final_mixing"]
-        yield mixing
+from bqa.config.schedule_syntax import (ACTIONS_KEY, FINAL_MIXING_KEY, INITIAL_MIXING_KEY,
+                                        SIMPLE_ACTION_TYPES, STEPS_NUMBER_KEY, TOTAL_TIME_KEY,
+                                        TYPE_KEY, WEIGHT_KEY, COMPLEX_ACTION_TYPES)
 
 
-def _interpolate_linearly(
-    start: float, end: float, steps_number: int
-) -> Iterable[float]:
+def _interpolate_linearly(start, end, steps_number):
     delta = (end - start) / steps_number
     for n in range(steps_number):
         yield start + n * delta
 
 
-def _canonicalize_action(
-    total_time: float,
-    starting_mixing: float,
-    action: Action,
-) -> Iterable[Instruction]:
-    if isinstance(action, dict):
-        final_mixing = action["final_mixing"]
-        steps_number = action["steps_number"]
-        assert isinstance(steps_number, int)
-        time_step = total_time * action["time"] / steps_number
-        yield from map(
-            lambda p: {"xtime": p * time_step, "ztime": (1.0 - p) * time_step},
-            _interpolate_linearly(starting_mixing, final_mixing, steps_number),
-        )
-    else:
-        yield action
+def _canonicalize_complex_action(total_time, action):
+    action_type = action[TYPE_KEY]
+    final_mixing = action[FINAL_MIXING_KEY]
+    initial_mixing = action[INITIAL_MIXING_KEY]
+    steps_number = action[STEPS_NUMBER_KEY]
+    time_step = total_time * action[WEIGHT_KEY] / steps_number
+    for p in _interpolate_linearly(initial_mixing, final_mixing, steps_number):
+        yield {"type" : action_type, "xtime": p * time_step, "ztime": (1.0 - p) * time_step}
 
 
-def _canonicalize_schedule(schedule: Schedule) -> Iterable[Instruction]:
-    total_time = schedule["total_time"]
-    assert isinstance(total_time, float)
-    starting_mixing = schedule["starting_mixing"]
-    assert isinstance(starting_mixing, float)
-    actions = schedule["actions"]
-    assert isinstance(actions, list)
-    mixings = _extract_mixings(starting_mixing, actions)
-    for action, mixing in zip(actions, mixings):
-        yield from _canonicalize_action(total_time, mixing, action)
+def _canonicalize_schedule(schedule):
+    total_time = schedule[TOTAL_TIME_KEY]
+    actions = schedule[ACTIONS_KEY]
+    for action in actions:
+        action_type = action[TYPE_KEY]
+        if action_type in COMPLEX_ACTION_TYPES:
+            yield from _canonicalize_complex_action(total_time, action)
+        elif action_type in SIMPLE_ACTION_TYPES:
+            yield action_type
+        else:
+            assert False
+

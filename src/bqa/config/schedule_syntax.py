@@ -1,25 +1,50 @@
 from math import isclose
-from typing import Optional
+import logging
 from .utils import (
     ConfigSyntaxError,
     _analyse_0_to_1_number,
     _analyse_non_neg_number,
     _analyse_positive_int,
-    _filtermap,
-    _ok_or_default_and_warn,
     _is_sequential,
-    _unwrap_or,
+    _get_or_default_and_warn,
+    _get_or_raise,
 )
 
-# types
+log = logging.getLogger(__name__)
 
-LinearScaling = dict[str, float | int]
+# keywords
 
-Action = LinearScaling | str
+FINAL_MIXING_KEY = "final_mixing"
 
-Actions = list[Action]
+INITIAL_MIXING_KEY = "initial_mixing"
 
-Schedule = dict[str, Actions | float]
+STARTING_MIXING_KEY = "starting_mixing"
+
+TYPE_KEY = "type"
+
+TOTAL_TIME_KEY = "total_time"
+
+ACTIONS_KEY = "actions"
+
+WEIGHT_KEY = "weight"
+
+STEPS_NUMBER_KEY = "steps_number"
+
+# action types
+
+GET_DENSITY_MATRICES = "get_density_matrices"
+
+MEASURE = "measure"
+
+REAL_TIME_EV_TYPE = "real_time_evolution"
+
+IMAG_TIME_EV_TYPE = "imag_time_evolution"
+
+SIMPLE_ACTION_TYPES = {MEASURE, GET_DENSITY_MATRICES}
+
+COMPLEX_ACTION_TYPES = {REAL_TIME_EV_TYPE, IMAG_TIME_EV_TYPE}
+
+ACTION_TYPES = {REAL_TIME_EV_TYPE, IMAG_TIME_EV_TYPE, MEASURE, GET_DENSITY_MATRICES}
 
 # defaults
 
@@ -27,21 +52,26 @@ DEFAULT_TOTAL_TIME = 10.0
 
 DEFAULT_STEPS_NUMBER = 100
 
-DEFAULT_TIME = 1.0
+DEFAULT_WEIGHT = 1.0
 
 DEFAULT_STARTING_MIXING = 1.0
 
 DEFAULT_FINAL_MIXING = 0.0
 
-DEFAULT_LINEAR_SCALING = {
-    "time": DEFAULT_TIME,
-    "steps_number": DEFAULT_STEPS_NUMBER,
-    "final_mixing": DEFAULT_FINAL_MIXING,
+DEFAULT_EVOLUTION_TYPE = "real_time_evolution"
+
+DEFAULT_EVOLUTION = {
+    TYPE_KEY : DEFAULT_EVOLUTION_TYPE,
+    WEIGHT_KEY : DEFAULT_WEIGHT,
+    STEPS_NUMBER_KEY : DEFAULT_STEPS_NUMBER,
+    FINAL_MIXING_KEY : DEFAULT_FINAL_MIXING,
 }
 
+SIMPLE_ACTIONS = {MEASURE, GET_DENSITY_MATRICES}
+
 DEFAULT_ACTIONS = [
-    DEFAULT_LINEAR_SCALING,
-    "get_density_matrices",
+    DEFAULT_EVOLUTION,
+    GET_DENSITY_MATRICES,
 ]
 
 DEFAULT_SCHEDULE = {
@@ -52,89 +82,88 @@ DEFAULT_SCHEDULE = {
 
 # syntax analysis
 
-
-def _analyse_linear_scaling(linear_scaling) -> LinearScaling:
-    time = _unwrap_or(linear_scaling.get("time"), "`time` field is missing")
-    steps_number = _ok_or_default_and_warn(
-        linear_scaling.get("steps_number"),
-        DEFAULT_STEPS_NUMBER,
-        f"`steps number` is missing in linear scaling, set to {DEFAULT_STEPS_NUMBER}",
-    )
-    final_mixing = _unwrap_or(
-        linear_scaling.get("final_mixing"), "`final_mixing` field is missing"
-    )
-    return {
-        "time": _analyse_0_to_1_number(time),
-        "steps_number": _analyse_positive_int(steps_number),
-        "final_mixing": _analyse_0_to_1_number(final_mixing),
-    }
+def _check_weight_sum_to_one(actions):
+    time_sum = sum(map(lambda x: x[WEIGHT_KEY], actions))
+    if not isclose(time_sum, 1.0):
+        raise ConfigSyntaxError(f"`{WEIGHT_KEY}` fields must sum into 1. in actions {actions}, but now it sums into {time_sum}")
 
 
-def _analyse_action(action) -> Action:
-    if isinstance(action, dict):
-        try:
-            return _analyse_linear_scaling(action)
-        except ConfigSyntaxError as e:
-            raise ConfigSyntaxError(f"Invalid linear scaling {action}") from e
-    elif action == "get_density_matrices" or action == "measure":
-        return action
-    else:
-        raise ConfigSyntaxError(f"Unknown action {action}")
+def _desug_actions_seq(actions, starting_mixing):
+    current_mixing = starting_mixing
+
+    def desug_simple_action(action):
+        return {
+            TYPE_KEY : action,
+            WEIGHT_KEY : 0,
+            INITIAL_MIXING_KEY : current_mixing,
+            FINAL_MIXING_KEY : current_mixing,
+            STEPS_NUMBER_KEY : 1,
+        }
+
+    def desug_complex_action(action):
+        nonlocal current_mixing
+        copied_action = action.copy()
+        if INITIAL_MIXING_KEY in copied_action:
+            raise ConfigSyntaxError(f"`{INITIAL_MIXING_KEY}` must not be present in the action {copied_action}, it is infered automatically")
+        copied_action[INITIAL_MIXING_KEY] = current_mixing
+        if FINAL_MIXING_KEY not in copied_action:
+            copied_action[FINAL_MIXING_KEY] = current_mixing
+        else:
+            current_mixing = copied_action[FINAL_MIXING_KEY]
+        return copied_action
+
+    for action in actions:
+        if isinstance(action, dict):
+            yield desug_complex_action(action)
+        elif isinstance(action, str):
+            yield desug_simple_action(action)
+        else:
+            raise TypeError(f"Invalid type {type(action)} of the action {action}")
 
 
-def _extract_time(action: Action) -> Optional[float]:
-    if isinstance(action, dict):
-        return action["time"]
+def _analyse_actions_seq(actions):
+    for action in actions:
+        action_type = _get_or_default_and_warn(action, TYPE_KEY, REAL_TIME_EV_TYPE)
+        if action_type not in ACTION_TYPES:
+            raise ConfigSyntaxError(f"Invalid action type {action_type} in action {action}")
+        weight = _analyse_0_to_1_number(_get_or_raise(action, WEIGHT_KEY))
+        steps_number = _analyse_positive_int(_get_or_default_and_warn(action, STEPS_NUMBER_KEY, DEFAULT_STEPS_NUMBER))
+        initial_mixing = _analyse_0_to_1_number(action[INITIAL_MIXING_KEY])
+        final_mixing = _analyse_0_to_1_number(action[FINAL_MIXING_KEY])
+        yield {TYPE_KEY : action_type,
+               WEIGHT_KEY : weight,
+               STEPS_NUMBER_KEY : steps_number,
+               INITIAL_MIXING_KEY : initial_mixing,
+               FINAL_MIXING_KEY : final_mixing}
 
 
-def _check_times_sum_to_one(actions: Actions) -> None:
-    if not isclose(sum(_filtermap(actions, _extract_time)), 1.0):
-        raise ConfigSyntaxError(f"`time` fields must sum into 1. in actions {actions}")
-
-
-def _analyse_actions(actions) -> Actions:
+def _analyse_actions(actions, mixing):
     if _is_sequential(actions):
         try:
-            actions = list(map(_analyse_action, actions))
-            _check_times_sum_to_one(actions)
-            return actions
+            analised_actions = list(_analyse_actions_seq(_desug_actions_seq(actions, mixing)))
+            _check_weight_sum_to_one(analised_actions)
+            return analised_actions
         except ConfigSyntaxError as e:
             raise ConfigSyntaxError(f"Invalid actions {actions}") from e
     else:
-        raise ConfigSyntaxError(f"Invalid actions {actions}")
+        raise ConfigSyntaxError(f"Actions must be either a list or a tuple, got {actions} of type {type(actions)}")
 
 
-def _analyse_schedule(schedule) -> Schedule:
+def _analyse_schedule(schedule):
     if isinstance(schedule, dict):
         try:
-            total_time = _analyse_non_neg_number(
-                _ok_or_default_and_warn(
-                    schedule.get("total_time"),
-                    DEFAULT_TOTAL_TIME,
-                    f"`total_time` field is missing in the schedule, set to {DEFAULT_TOTAL_TIME}",
-                )
-            )
-            starting_mixing = _analyse_0_to_1_number(
-                _ok_or_default_and_warn(
-                    schedule.get("starting_mixing"),
-                    DEFAULT_STARTING_MIXING,
-                    f"`starting_mixing` field is missing in the schedule, \
-                    set to {DEFAULT_STARTING_MIXING}",
-                )
-            )
+            total_time = _analyse_non_neg_number(_get_or_default_and_warn(schedule, TOTAL_TIME_KEY, DEFAULT_TOTAL_TIME))
+            starting_mixing = _analyse_0_to_1_number(_get_or_default_and_warn(schedule, STARTING_MIXING_KEY, DEFAULT_STARTING_MIXING))
             actions = _analyse_actions(
-                _ok_or_default_and_warn(
-                    schedule.get("actions"),
-                    DEFAULT_ACTIONS,
-                    f"`actions` field is missing in the schedule, set to {DEFAULT_ACTIONS}",
-                )
+                _get_or_default_and_warn(schedule, ACTIONS_KEY, DEFAULT_ACTIONS),
+                starting_mixing,
             )
             return {
-                "total_time": total_time,
-                "starting_mixing": starting_mixing,
-                "actions": actions,
+                TOTAL_TIME_KEY : total_time,
+                ACTIONS_KEY : actions,
             }
         except ConfigSyntaxError as e:
             raise ConfigSyntaxError(f"Invalid schedule {schedule}") from e
     else:
-        raise ConfigSyntaxError(f"Invalid schedule {schedule}")
+        raise ConfigSyntaxError(f"Schedule must be a dict, got {schedule} of type {type(schedule)}")
+
