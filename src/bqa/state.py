@@ -122,6 +122,21 @@ def _run_bp(context: Context, state: State, is_sampling_stage: bool = False) -> 
     log.warning(f"BP algorithm exceeds iterations limit set to {max_bp_iters}")
 
 
+def _get_extended_msgs(context: Context, ztime: float, state: State) -> Tensor:
+    bond_dim = state.bond_dim
+    new_msgs = context.backend.make_empty(context.edges_number, (2 * bond_dim, 2 * bond_dim))
+    for degree, tensor in state.degree_to_tensor.items():
+        layout = context.degree_to_layout[degree]
+        evolution_times = tuple(a * ztime for a in layout.edge_ampls)
+        input_msgs_position = context.degree_to_layout[degree].input_msgs_position
+        output_msgs_position = context.degree_to_layout[degree].output_msgs_position
+        aligned_msgs = tuple(state.msgs.batch_slice(pos) for pos in input_msgs_position)
+        new_output_msgs = tensor.pass_msgs(aligned_msgs, evolution_times)
+        for ms, poss in zip(new_output_msgs, output_msgs_position):
+            new_msgs.assign_at_batch_indices(ms, poss)
+    return new_msgs
+
+
 def _apply_z_layer(context: Context, ztime: float, state: State) -> None:
 
     def apply_z_to_tensor(degree: int, tensor: Tensor) -> Tensor:
@@ -130,10 +145,10 @@ def _apply_z_layer(context: Context, ztime: float, state: State) -> None:
         edge_ampls = (a * ztime for a in layout.edge_ampls)
         return tensor.apply_z_gates(ztime * node_ampls).apply_conditional_z_gates(edge_ampls)
 
-    new_degree_to_tensor = {d : apply_z_to_tensor(d, t) for d, t in state.degree_to_tensor.items()}
-    new_msgs = state.msgs.extend_msgs()
-    state.degree_to_tensor = new_degree_to_tensor
+    new_msgs = _get_extended_msgs(context, ztime, state)
     state.msgs = new_msgs
+    new_degree_to_tensor = {d : apply_z_to_tensor(d, t) for d, t in state.degree_to_tensor.items()}
+    state.degree_to_tensor = new_degree_to_tensor
 
 
 def _apply_x_layer(xtime: float, state: State) -> None:
