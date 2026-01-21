@@ -3,6 +3,7 @@ __pycache__/
 venv/
 .venv/
 env/
+dist/
 *.log
 *.tmp
 .env

@@ -1,0 +1,115 @@
+name: Publish to PyPI & Deploy Docker to ECR
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  AWS_ROLE_TO_ASSUME: ${{ vars.AWS_ROLE_TO_ASSUME }}
+  ECR_REPOSITORY: tii-qag/bqa
+
+jobs:
+  # JOB 1: Publish package to Test PyPI
+  publish-to-pypi:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Poetry
+        run: |
+          curl -sSL https://install.python-poetry.org | python3 -
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Build package
+        run: poetry build
+
+      - name: Publish to Test PyPI
+        env:
+          POETRY_PYPI_TOKEN_TESTPYPI: ${{ secrets.TEST_PYPI_API_TOKEN }}
+        run: |
+          poetry config repositories.testpypi https://test.pypi.org/legacy/
+          poetry publish -r testpypi
+
+      - name: Wait for package availability
+        run: |
+          echo "Waiting 30 seconds for package to be available on Test PyPI..."
+          sleep 30
+
+  # JOB 2: Build Docker image and push to ECR (depends on Job 1)
+  build-and-push-docker:
+    needs: publish-to-pypi
+    runs-on: ubuntu-latest
+    # Makes Environment variables (Settings -> Environments -> AWS -> Variables) available via `vars.*`
+    environment: AWS
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate required variables
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${AWS_REGION:-}" ]]; then
+            echo "Missing AWS_REGION."
+            echo "If you set it as an Environment variable, ensure this job has 'environment: AWS'."
+            echo "If you set it as a Repository variable, ensure it exists under Settings -> Secrets and variables -> Actions -> Variables."
+            exit 1
+          fi
+          if [[ -z "${AWS_ROLE_TO_ASSUME:-}" ]]; then
+            echo "Missing AWS_ROLE_TO_ASSUME."
+            echo "If you set it as an Environment variable, ensure this job has 'environment: AWS'."
+            exit 1
+          fi
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Docker metadata (tags, labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}
+          tags: |
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summary
+        run: |
+          echo "Pushed image(s):"
+          echo "${{ steps.meta.outputs.tags }}"
