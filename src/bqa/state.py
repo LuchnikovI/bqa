@@ -140,13 +140,9 @@ def _get_extended_msgs(context: Context, ztime: float, state: State) -> Tensor:
 def _apply_z_layer(context: Context, ztime: float, state: State) -> None:
 
     def apply_z_to_tensor(degree: int, tensor: Tensor) -> Tensor:
-        layout = context.degree_to_layout[degree]
-        node_ampls = layout.node_ampls
-        edge_ampls = (a * ztime for a in layout.edge_ampls)
-        return tensor.apply_z_gates(ztime * node_ampls).apply_conditional_z_gates(edge_ampls)
+        node_ampls = context.degree_to_layout[degree].node_ampls
+        return tensor.apply_z_gates(ztime * node_ampls)
 
-    new_msgs = _get_extended_msgs(context, ztime, state)
-    state.msgs = new_msgs
     new_degree_to_tensor = {d : apply_z_to_tensor(d, t) for d, t in state.degree_to_tensor.items()}
     state.degree_to_tensor = new_degree_to_tensor
 
@@ -167,15 +163,16 @@ def _truncate_vidal_gauge(context: Context, state: State) -> None:
     log.debug(f"Vidal gauge has been truncated, tensor shapes: {new_tensor_shapes}, lmbds shapes: {new_lmbds_shapes}")
 
 
-def _set_to_vidal_gauge(context: Context, state: State) -> None:
-    pinv_eps = context.pinv_eps
+def _get_canonicalizers(msgs: Tensor, pinv_eps: float) -> tuple[Tensor, Tensor]:
+    edges_number = msgs.batch_size
+    lmbds_number = edges_number // 2
 
     # these three functions rely on the insertion order of msgs into a dict
     def get_fwd(t: Tensor) -> Tensor:
-        return t.get_batch_slice(range(context.lmbds_number))
+        return t.get_batch_slice(range(lmbds_number))
 
     def get_bwd(t: Tensor) -> Tensor:
-        return t.get_batch_slice(range(context.lmbds_number, context.edges_number))
+        return t.get_batch_slice(range(lmbds_number, edges_number))
 
     def assembly_canonicalizers(fwd_canonicalizer: Tensor, bwd_canonicalizer: Tensor) -> Tensor:
         return bwd_canonicalizer.batch_concat(fwd_canonicalizer)
@@ -186,16 +183,22 @@ def _set_to_vidal_gauge(context: Context, state: State) -> None:
         us, s, vhs = ker.get_batch_svd(pinv_eps)
         return us, s, vhs.batch_transpose((1, 0))
 
-    ul, lu = state.msgs.decompose_iden_using_msgs(pinv_eps)
+    ul, lu = msgs.decompose_iden_using_msgs(pinv_eps)
     fwd_lu = get_fwd(lu)
     bwd_lu = get_bwd(lu)
     fwd_ul = get_fwd(ul)
     bwd_ul = get_bwd(ul)
     us, lmbds, vs = colide(fwd_lu, bwd_lu)
-    state.lmbds = lmbds.batch_normalize()
     fwd_canonicalizer = fwd_ul.batch_matmul(us)
     bwd_canonicalizer = bwd_ul.batch_matmul(vs)
     canonicalizers = assembly_canonicalizers(fwd_canonicalizer, bwd_canonicalizer)
+    return lmbds.batch_normalize(), canonicalizers
+
+
+def _set_to_vidal_gauge(context: Context, state: State) -> None:
+    pinv_eps = context.pinv_eps
+    lmbds, canonicalizers = _get_canonicalizers(state.msgs, pinv_eps)
+    state.lmbds = lmbds
     degree_to_tensor = state.degree_to_tensor
     for degree, layout in context.degree_to_layout.items():
         aligned_canonicalizers = tuple(
@@ -216,6 +219,25 @@ def _set_to_symmetric_gauge(context: Context, state: State) -> None:
         updated_tensors = state.degree_to_tensor[degree].mul_by_lmbds(sqrt_lmbds)
         state.degree_to_tensor[degree] = updated_tensors
     log.debug("State has been set to Symmetric_gauge")
+
+
+def _simple_update(context: Context, time: float, state: State) -> None:
+    msgs = _get_extended_msgs(context, time, state)
+    lmbds, canonicalizers = _get_canonicalizers(msgs, context.pinv_eps)
+    bond_dim = context.max_bond_dim
+    trunc_lmbds = lmbds.batch_truncate_all_but(bond_dim)
+    state.lmbds = trunc_lmbds
+    trunc_canonicalizers = canonicalizers.batch_truncate_all_but(bond_dim, [0])
+    degree_to_tensor = state.degree_to_tensor
+    for degree, layout in context.degree_to_layout.items():
+        aligned_canonicalizers = tuple(
+            trunc_canonicalizers.batch_slice(idx) for idx in layout.input_msgs_position
+        )
+        aligned_couplings = tuple(a * time for a in layout.edge_ampls)
+        degree_to_tensor[degree] = degree_to_tensor[degree].apply_canonicalizers_with_extensions(
+            aligned_canonicalizers,
+            aligned_couplings
+        )
 
 
 def measure(context: Context, state: State) -> list:
@@ -277,21 +299,15 @@ def measure(context: Context, state: State) -> list:
         measure_nodes_above_threshold(not_measured_ground_probs)
         measure_nodes_below_threshold(not_measured_ground_probs)
         _run_bp(context, state, is_sampling_stage=True)
-    _set_to_vidal_gauge(context, state)
-    _truncate_vidal_gauge(context, state)
-    _set_to_symmetric_gauge(context, state)
-    _run_bp(context, state, is_sampling_stage=True)
     measurement_outcomes = [measurement_outcomes[node_id] for node_id in range(len(measurement_outcomes))]
     log.info("Sampling measurement outcomes completed")
     return measurement_outcomes
 
 
 def run_layer(context: Context, xtime: float, ztime: float, state: State) -> None:
+    _simple_update(context, ztime, state)
     _apply_z_layer(context, ztime, state)
-    _run_bp(context, state)
-    _set_to_vidal_gauge(context, state)
-    _truncate_vidal_gauge(context, state)
+    _apply_x_layer(xtime, state)
     _set_to_symmetric_gauge(context, state)
     _run_bp(context, state)
-    _apply_x_layer(xtime, state)  # in all subroutines state is also mutated accordingly
     log.info(f"Layer with ztime {ztime} and xtime {xtime} is applied")

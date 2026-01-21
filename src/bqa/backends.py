@@ -388,6 +388,24 @@ class Tensor(ABC, Generic[RawTensor]):
             lambda t, c: t.batch_tensordot(c, [[1], [0]]), canonicalizers, self
         )
 
+    def apply_canonicalizers_with_extensions(
+            self,
+            canonicalizers: tuple[Self, ...],
+            couplings: tuple[Self, ...],
+    ) -> Self:
+        assert self.batch_rank - 1 == len(canonicalizers)
+
+        def apply_canonicalizer(
+                tensor: Self,
+                canonicalizer_and_coupling: tuple[Self, Self],
+        ) -> Self:
+            canonicalizer, coupling = canonicalizer_and_coupling
+            return (tensor
+                    ._apply_conditional_z_gate_to_single_axis(1, coupling)
+                    .batch_tensordot(canonicalizer, [[1], [0]]))
+
+        return reduce(apply_canonicalizer, zip(canonicalizers, couplings), self)
+
     def _apply_x_to_phys_dim(self) -> Self:
         return self.apply_to_raw_tensor(self.apply_x_to_phys_dim_raw)
 
