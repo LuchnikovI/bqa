@@ -73,9 +73,6 @@ def _initialize_state(context: Context) -> State:
     )
 
 
-# density matrices
-
-
 def get_density_matrices(context: Context, state: State) -> NDArray:
     density_matrices = np.empty((context.nodes_number, 2, 2), NP_DTYPE)
 
@@ -154,6 +151,7 @@ def _apply_x_layer(xtime: float, state: State) -> None:
     log.debug("Layer of local Rx gates has been applied")
 
 
+# TODO: it is not used currently, consider deleting
 def _truncate_vidal_gauge(context: Context, state: State) -> None:
     bond_dim = context.max_bond_dim
     truncated_degree_to_tensor = {d : t.batch_truncate_all_but(bond_dim, [0]) for d, t in state.degree_to_tensor.items()}
@@ -197,6 +195,7 @@ def _get_canonicalizers(msgs: Tensor, pinv_eps: float) -> tuple[Tensor, Tensor]:
     return lmbds.batch_normalize(), canonicalizers
 
 
+# TODO: it is not used currently, consider deleting
 def _set_to_vidal_gauge(context: Context, state: State) -> None:
     pinv_eps = context.pinv_eps
     lmbds, canonicalizers = _get_canonicalizers(state.msgs, pinv_eps)
