@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 import logging
+from math import inf
 import numpy as np
 from typing import Iterator
 from numpy.random import Generator, default_rng
@@ -93,8 +94,16 @@ def get_density_matrices(context: Context, state: State) -> NDArray:
     return density_matrices
 
 
-def _run_bp(context: Context, state: State, is_sampling_stage: bool = False) -> None:
+def _run_bp(context: Context, state: State) -> None:
     log.debug("BP algorithm has started")
+    prev_dist = inf
+    
+    def does_dist_increase(new_dist: float) -> bool:
+        nonlocal prev_dist
+        flag = new_dist > prev_dist
+        prev_dist = new_dist
+        return flag
+
     bond_dim = state.bond_dim
     bp_eps = context.bp_eps
     max_bp_iters = context.max_bp_iters_number
@@ -107,15 +116,15 @@ def _run_bp(context: Context, state: State, is_sampling_stage: bool = False) -> 
             new_output_msgs = tensor.pass_msgs(aligned_msgs)
             for ms, poss in zip(new_output_msgs, output_msgs_position):
                 new_msgs.assign_at_batch_indices(ms, poss)
-        dist = new_msgs.get_dist(state.msgs).numpy
+        dist = float(new_msgs.get_dist(state.msgs).numpy)
+        if does_dist_increase(dist):
+            log.warning(f"BP algorithm started to diverge after {iter_num} iteration, dist value is {dist}")
+            return
         log.debug(f"Iteration {iter_num}, distance between subsequent messages {dist}")
         if dist < bp_eps:
             log.debug(f"BP algorithm completed after {iter_num} iterations")
             return
-        if is_sampling_stage:
-            state.msgs.make_inplace_damping_update(new_msgs, context.damping)
-        else:
-            state.msgs, new_msgs = new_msgs, state.msgs
+        state.msgs.make_inplace_damping_update(new_msgs, context.damping)
     log.warning(f"BP algorithm exceeds iterations limit set to {max_bp_iters}")
 
 
@@ -252,7 +261,7 @@ def measure(context: Context, state: State) -> list:
 
     def get_not_measured_ground_probs() -> dict[int, float]:
         return {
-            node_id: dens[0, 0]
+            node_id: float(dens[0, 0].real)
             for node_id, dens in enumerate(get_density_matrices(context, state))
             if node_id not in measurement_outcomes
         }
@@ -279,29 +288,29 @@ def measure(context: Context, state: State) -> list:
         apply_and_register_measurement(1, node_id)
 
     def measure_nodes_above_threshold(not_measured_nodes: dict[int, float]) -> None:
-        above_thrshld = list(node_id for node_id, prob in not_measured_nodes.items() if prob > threshold)
-        for node_id in above_thrshld:
+        above_thrshld = {node_id : prob for node_id, prob in not_measured_nodes.items() if prob > threshold}
+        for node_id in above_thrshld.keys():
             apply_and_register_0_measurement(node_id)
-        log.debug(f"Nodes {above_thrshld} were above threshold and have been projected up")
+        log.debug(f"Nodes {above_thrshld} were above threshold {threshold} and have been projected up")
 
     def measure_nodes_below_threshold(not_measured_nodes: dict[int, float]) -> None:
-        below_thrshld = list(node_id for node_id, prob in not_measured_nodes.items() if prob < 1.0 - threshold)
-        for node_id in below_thrshld:
+        below_thrshld = {node_id : prob.real for node_id, prob in not_measured_nodes.items() if prob < 1.0 - threshold}
+        for node_id in below_thrshld.keys():
             apply_and_register_1_measurement(node_id)
-        log.debug(f"Nodes {below_thrshld} were below threshold and have been projected down")
+        log.debug(f"Nodes {below_thrshld} were below threshold {1.0 - threshold} and have been projected down")
 
     log.debug("Measurement outcomes sampling started")
     while is_not_all_measured():
         not_measured_ground_probs = get_not_measured_ground_probs()
-        node_id, prob = min(not_measured_ground_probs.items(), key=get_z_abs_value)
+        node_id, prob = max(not_measured_ground_probs.items(), key=get_z_abs_value)
         measurement_outcome = sample_outcome(prob)
-        log.debug(f"Node {node_id} had highest uncertainty and has been measured")
+        log.debug(f"Node {node_id} the most determined (spin-up probability {prob} and spin-down probability {1 - prob}) and has been measured")
         apply_and_register_measurement(measurement_outcome, node_id)
-        _run_bp(context, state, is_sampling_stage=True)
+        _run_bp(context, state)
         not_measured_ground_probs = get_not_measured_ground_probs()
         measure_nodes_above_threshold(not_measured_ground_probs)
         measure_nodes_below_threshold(not_measured_ground_probs)
-        _run_bp(context, state, is_sampling_stage=True)
+        _run_bp(context, state)
     measurement_outcomes = [measurement_outcomes[node_id] for node_id in range(len(measurement_outcomes))]
     log.info("Measurement outcomes sampling completed")
     return measurement_outcomes

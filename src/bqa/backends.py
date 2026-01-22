@@ -702,7 +702,7 @@ class NumPyBackend(Tensor):
     def measure_raw_tensor_by_position_in_place(
         raw_tensor: NDArray, position: int, outcome
     ) -> None:
-        raw_tensor[position, 0 if outcome else 1] = 0.0
+        raw_tensor[position, 1 - outcome] = 0.0
         raw_tensor /= np.linalg.norm(raw_tensor)
 
 
@@ -900,7 +900,7 @@ try:
         def measure_raw_tensor_by_position_in_place(
             raw_tensor, position: int, outcome
         ) -> None:
-            raw_tensor[position, 0 if outcome else 1] = 0.0
+            raw_tensor[position, 1 - outcome] = 0.0
             raw_tensor /= cp.linalg.norm(raw_tensor)
 
 
