@@ -157,18 +157,18 @@ def _analyse_edges(edges):
 def _analyse_config(config):
     if isinstance(config, dict):
         try:
-            nodes = _get_or_default_and_warn(config, NODES_KEY, DEFAULT_NODES)
-            edges = _get_or_raise(config, EDGES_KEY)
-            schedule = _get_or_default_and_warn(config, SCHEDULE_KEY, DEFAULT_SCHEDULE)
-            max_bond_dim = _get_or_default_and_warn(config, MAX_BOND_DIM_KEY, DEFAULT_MAX_BOND_DIM)
-            max_bp_iters_number = _get_or_default_and_warn(config, MAX_BP_ITER_NUMBER_KEY, DEFAULT_MAX_BP_ITERS_NUMBER)
-            bp_eps = _get_or_default_and_warn(config, BP_EPS_KEY, DEFAULT_BP_EPS)
-            pinv_eps = _get_or_default_and_warn(config, PINV_EPS_KEY, DEFAULT_PINV_EPS)
-            backend = _get_or_default_and_warn(config, BACKEND_KEY, DEFAULT_BACKEND)
-            default_field = _get_or_default_and_warn(config, DEFAULT_FIELD_KEY, DEFAULT_DEFAULT_FIELD)
-            measurement_threshold = _get_or_default_and_warn(config, MEASUREMENT_THRESHOLD_KEY, DEFAULT_MEASUREMENT_THRESHOLD)
-            seed = _get_or_default_and_warn(config, SEED_KEY, DEFAULT_SEED)
-            damping = _get_or_default_and_warn(config, DAMPING_KEY, DEFAULT_DAMPING)
+            nodes = _get_or_default_and_warn(config, NODES_KEY, DEFAULT_NODES, "config")
+            edges = _get_or_raise(config, EDGES_KEY, "config")
+            schedule = _get_or_default_and_warn(config, SCHEDULE_KEY, DEFAULT_SCHEDULE, "config")
+            max_bond_dim = _get_or_default_and_warn(config, MAX_BOND_DIM_KEY, DEFAULT_MAX_BOND_DIM, "config")
+            max_bp_iters_number = _get_or_default_and_warn(config, MAX_BP_ITER_NUMBER_KEY, DEFAULT_MAX_BP_ITERS_NUMBER, "config")
+            bp_eps = _get_or_default_and_warn(config, BP_EPS_KEY, DEFAULT_BP_EPS, "config")
+            pinv_eps = _get_or_default_and_warn(config, PINV_EPS_KEY, DEFAULT_PINV_EPS, "config")
+            backend = _get_or_default_and_warn(config, BACKEND_KEY, DEFAULT_BACKEND, "config")
+            default_field = _get_or_default_and_warn(config, DEFAULT_FIELD_KEY, DEFAULT_DEFAULT_FIELD, "config")
+            measurement_threshold = _get_or_default_and_warn(config, MEASUREMENT_THRESHOLD_KEY, DEFAULT_MEASUREMENT_THRESHOLD, "config")
+            seed = _get_or_default_and_warn(config, SEED_KEY, DEFAULT_SEED, "config")
+            damping = _get_or_default_and_warn(config, DAMPING_KEY, DEFAULT_DAMPING, "config")
             return {
                 NODES_KEY : _analyse_nodes(nodes),
                 EDGES_KEY : _analyse_edges(edges),

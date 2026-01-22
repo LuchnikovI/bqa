@@ -123,11 +123,11 @@ def _desug_actions_seq(actions, starting_mixing):
 
 def _analyse_actions_seq(actions):
     for action in actions:
-        action_type = _get_or_default_and_warn(action, TYPE_KEY, REAL_TIME_EV_TYPE)
+        action_type = _get_or_default_and_warn(action, TYPE_KEY, REAL_TIME_EV_TYPE, "action")
         if action_type not in ACTION_TYPES:
             raise ConfigSyntaxError(f"Invalid action type {action_type} in action {action}")
-        weight = _analyse_0_to_1_number(_get_or_raise(action, WEIGHT_KEY))
-        steps_number = _analyse_positive_int(_get_or_default_and_warn(action, STEPS_NUMBER_KEY, DEFAULT_STEPS_NUMBER))
+        weight = _analyse_0_to_1_number(_get_or_raise(action, WEIGHT_KEY, "action"))
+        steps_number = _analyse_positive_int(_get_or_default_and_warn(action, STEPS_NUMBER_KEY, DEFAULT_STEPS_NUMBER, "action"))
         initial_mixing = _analyse_0_to_1_number(action[INITIAL_MIXING_KEY])
         final_mixing = _analyse_0_to_1_number(action[FINAL_MIXING_KEY])
         yield {TYPE_KEY : action_type,
@@ -152,10 +152,10 @@ def _analyse_actions(actions, mixing):
 def _analyse_schedule(schedule):
     if isinstance(schedule, dict):
         try:
-            total_time = _analyse_non_neg_number(_get_or_default_and_warn(schedule, TOTAL_TIME_KEY, DEFAULT_TOTAL_TIME))
-            starting_mixing = _analyse_0_to_1_number(_get_or_default_and_warn(schedule, STARTING_MIXING_KEY, DEFAULT_STARTING_MIXING))
+            total_time = _analyse_non_neg_number(_get_or_default_and_warn(schedule, TOTAL_TIME_KEY, DEFAULT_TOTAL_TIME, "schedule"))
+            starting_mixing = _analyse_0_to_1_number(_get_or_default_and_warn(schedule, STARTING_MIXING_KEY, DEFAULT_STARTING_MIXING, "schedule"))
             actions = _analyse_actions(
-                _get_or_default_and_warn(schedule, ACTIONS_KEY, DEFAULT_ACTIONS),
+                _get_or_default_and_warn(schedule, ACTIONS_KEY, DEFAULT_ACTIONS, "schedule"),
                 starting_mixing,
             )
             return {

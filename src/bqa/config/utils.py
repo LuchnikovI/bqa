@@ -11,17 +11,17 @@ def _is_sequential(smthng):
     return isinstance(smthng, (list, tuple))
 
 
-def _get_or_default_and_warn(dct, key, default):
+def _get_or_default_and_warn(dct, key, default, where):
     val = dct.get(key)
     if val is None:
-        log.warning(f"`{key}` field is missing in {dct}, set to default {default}")
+        log.warning(f"`{key}` field is missing in {where}, set to default {default}")
         val = default
     return val
 
-def _get_or_raise(dct, key):
+def _get_or_raise(dct, key, where):
     val = dct.get(key)
     if val is None:
-        raise ConfigSyntaxError(f"`{key}` field is missing in {dct}")
+        raise ConfigSyntaxError(f"`{key}` field is missing in {where}")
     return val
 
 
