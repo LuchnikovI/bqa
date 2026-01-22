@@ -145,11 +145,13 @@ def _apply_z_layer(context: Context, ztime: float, state: State) -> None:
 
     new_degree_to_tensor = {d : apply_z_to_tensor(d, t) for d, t in state.degree_to_tensor.items()}
     state.degree_to_tensor = new_degree_to_tensor
+    log.debug("Layer of local Rz gates has been applied")
 
 
 def _apply_x_layer(xtime: float, state: State) -> None:
     new_degree_to_tensor = {d : t.apply_x_gates(xtime) for d, t in state.degree_to_tensor.items()}
     state.degree_to_tensor = new_degree_to_tensor
+    log.debug("Layer of local Rx gates has been applied")
 
 
 def _truncate_vidal_gauge(context: Context, state: State) -> None:
@@ -238,6 +240,7 @@ def _simple_update(context: Context, time: float, state: State) -> None:
             aligned_canonicalizers,
             aligned_couplings
         )
+    log.debug(f"Layer of interaction gates with truncation has been applied, current bond dimension is {state.bond_dim}")
 
 
 def measure(context: Context, state: State) -> list:
@@ -288,6 +291,7 @@ def measure(context: Context, state: State) -> list:
             apply_and_register_1_measurement(node_id)
         log.debug(f"Nodes {below_thrshld} were below threshold and have been projected down")
 
+    log.debug("Measurement outcomes sampling started")
     while is_not_all_measured():
         not_measured_ground_probs = get_not_measured_ground_probs()
         node_id, prob = min(not_measured_ground_probs.items(), key=get_z_abs_value)
@@ -300,7 +304,7 @@ def measure(context: Context, state: State) -> list:
         measure_nodes_below_threshold(not_measured_ground_probs)
         _run_bp(context, state, is_sampling_stage=True)
     measurement_outcomes = [measurement_outcomes[node_id] for node_id in range(len(measurement_outcomes))]
-    log.info("Sampling measurement outcomes completed")
+    log.info("Measurement outcomes sampling completed")
     return measurement_outcomes
 
 
@@ -310,4 +314,4 @@ def run_layer(context: Context, xtime: float, ztime: float, state: State) -> Non
     _apply_x_layer(xtime, state)
     _set_to_symmetric_gauge(context, state)
     _run_bp(context, state)
-    log.info(f"Layer with ztime {ztime} and xtime {xtime} is applied")
+    log.info(f"Layer with ztime {ztime} and xtime {xtime} has been applied")
