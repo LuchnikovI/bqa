@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 import logging
+from math import inf
 import numpy as np
 from typing import Iterator
 from numpy.random import Generator, default_rng
@@ -73,9 +74,6 @@ def _initialize_state(context: Context) -> State:
     )
 
 
-# density matrices
-
-
 def get_density_matrices(context: Context, state: State) -> NDArray:
     density_matrices = np.empty((context.nodes_number, 2, 2), NP_DTYPE)
 
@@ -96,8 +94,16 @@ def get_density_matrices(context: Context, state: State) -> NDArray:
     return density_matrices
 
 
-def _run_bp(context: Context, state: State, is_sampling_stage: bool = False) -> None:
+def _run_bp(context: Context, state: State) -> None:
     log.debug("BP algorithm has started")
+    prev_dist = inf
+    
+    def does_dist_increase(new_dist: float) -> bool:
+        nonlocal prev_dist
+        flag = new_dist > prev_dist
+        prev_dist = new_dist
+        return flag
+
     bond_dim = state.bond_dim
     bp_eps = context.bp_eps
     max_bp_iters = context.max_bp_iters_number
@@ -110,37 +116,51 @@ def _run_bp(context: Context, state: State, is_sampling_stage: bool = False) -> 
             new_output_msgs = tensor.pass_msgs(aligned_msgs)
             for ms, poss in zip(new_output_msgs, output_msgs_position):
                 new_msgs.assign_at_batch_indices(ms, poss)
-        dist = new_msgs.get_dist(state.msgs).numpy
+        dist = float(new_msgs.get_dist(state.msgs).numpy)
+        if does_dist_increase(dist):
+            log.warning(f"BP algorithm started to diverge after {iter_num} iteration, dist value is {dist}")
+            return
         log.debug(f"Iteration {iter_num}, distance between subsequent messages {dist}")
         if dist < bp_eps:
             log.debug(f"BP algorithm completed after {iter_num} iterations")
             return
-        if is_sampling_stage:
-            state.msgs.make_inplace_damping_update(new_msgs, context.damping)
-        else:
-            state.msgs, new_msgs = new_msgs, state.msgs
+        state.msgs.make_inplace_damping_update(new_msgs, context.damping)
     log.warning(f"BP algorithm exceeds iterations limit set to {max_bp_iters}")
+
+
+def _get_extended_msgs(context: Context, ztime: float, state: State) -> Tensor:
+    bond_dim = state.bond_dim
+    new_msgs = context.backend.make_empty(context.edges_number, (2 * bond_dim, 2 * bond_dim))
+    for degree, tensor in state.degree_to_tensor.items():
+        layout = context.degree_to_layout[degree]
+        evolution_times = tuple(a * ztime for a in layout.edge_ampls)
+        input_msgs_position = context.degree_to_layout[degree].input_msgs_position
+        output_msgs_position = context.degree_to_layout[degree].output_msgs_position
+        aligned_msgs = tuple(state.msgs.batch_slice(pos) for pos in input_msgs_position)
+        new_output_msgs = tensor.pass_msgs(aligned_msgs, evolution_times)
+        for ms, poss in zip(new_output_msgs, output_msgs_position):
+            new_msgs.assign_at_batch_indices(ms, poss)
+    return new_msgs
 
 
 def _apply_z_layer(context: Context, ztime: float, state: State) -> None:
 
     def apply_z_to_tensor(degree: int, tensor: Tensor) -> Tensor:
-        layout = context.degree_to_layout[degree]
-        node_ampls = layout.node_ampls
-        edge_ampls = (a * ztime for a in layout.edge_ampls)
-        return tensor.apply_z_gates(ztime * node_ampls).apply_conditional_z_gates(edge_ampls)
+        node_ampls = context.degree_to_layout[degree].node_ampls
+        return tensor.apply_z_gates(ztime * node_ampls)
 
     new_degree_to_tensor = {d : apply_z_to_tensor(d, t) for d, t in state.degree_to_tensor.items()}
-    new_msgs = state.msgs.extend_msgs()
     state.degree_to_tensor = new_degree_to_tensor
-    state.msgs = new_msgs
+    log.debug("Layer of local Rz gates has been applied")
 
 
 def _apply_x_layer(xtime: float, state: State) -> None:
     new_degree_to_tensor = {d : t.apply_x_gates(xtime) for d, t in state.degree_to_tensor.items()}
     state.degree_to_tensor = new_degree_to_tensor
+    log.debug("Layer of local Rx gates has been applied")
 
 
+# TODO: it is not used currently, consider deleting
 def _truncate_vidal_gauge(context: Context, state: State) -> None:
     bond_dim = context.max_bond_dim
     truncated_degree_to_tensor = {d : t.batch_truncate_all_but(bond_dim, [0]) for d, t in state.degree_to_tensor.items()}
@@ -152,15 +172,16 @@ def _truncate_vidal_gauge(context: Context, state: State) -> None:
     log.debug(f"Vidal gauge has been truncated, tensor shapes: {new_tensor_shapes}, lmbds shapes: {new_lmbds_shapes}")
 
 
-def _set_to_vidal_gauge(context: Context, state: State) -> None:
-    pinv_eps = context.pinv_eps
+def _get_canonicalizers(msgs: Tensor, pinv_eps: float) -> tuple[Tensor, Tensor]:
+    edges_number = msgs.batch_size
+    lmbds_number = edges_number // 2
 
     # these three functions rely on the insertion order of msgs into a dict
     def get_fwd(t: Tensor) -> Tensor:
-        return t.get_batch_slice(range(context.lmbds_number))
+        return t.get_batch_slice(range(lmbds_number))
 
     def get_bwd(t: Tensor) -> Tensor:
-        return t.get_batch_slice(range(context.lmbds_number, context.edges_number))
+        return t.get_batch_slice(range(lmbds_number, edges_number))
 
     def assembly_canonicalizers(fwd_canonicalizer: Tensor, bwd_canonicalizer: Tensor) -> Tensor:
         return bwd_canonicalizer.batch_concat(fwd_canonicalizer)
@@ -171,16 +192,23 @@ def _set_to_vidal_gauge(context: Context, state: State) -> None:
         us, s, vhs = ker.get_batch_svd(pinv_eps)
         return us, s, vhs.batch_transpose((1, 0))
 
-    ul, lu = state.msgs.decompose_iden_using_msgs(pinv_eps)
+    ul, lu = msgs.decompose_iden_using_msgs(pinv_eps)
     fwd_lu = get_fwd(lu)
     bwd_lu = get_bwd(lu)
     fwd_ul = get_fwd(ul)
     bwd_ul = get_bwd(ul)
     us, lmbds, vs = colide(fwd_lu, bwd_lu)
-    state.lmbds = lmbds.batch_normalize()
     fwd_canonicalizer = fwd_ul.batch_matmul(us)
     bwd_canonicalizer = bwd_ul.batch_matmul(vs)
     canonicalizers = assembly_canonicalizers(fwd_canonicalizer, bwd_canonicalizer)
+    return lmbds.batch_normalize(), canonicalizers
+
+
+# TODO: it is not used currently, consider deleting
+def _set_to_vidal_gauge(context: Context, state: State) -> None:
+    pinv_eps = context.pinv_eps
+    lmbds, canonicalizers = _get_canonicalizers(state.msgs, pinv_eps)
+    state.lmbds = lmbds
     degree_to_tensor = state.degree_to_tensor
     for degree, layout in context.degree_to_layout.items():
         aligned_canonicalizers = tuple(
@@ -203,6 +231,26 @@ def _set_to_symmetric_gauge(context: Context, state: State) -> None:
     log.debug("State has been set to Symmetric_gauge")
 
 
+def _simple_update(context: Context, time: float, state: State) -> None:
+    msgs = _get_extended_msgs(context, time, state)
+    lmbds, canonicalizers = _get_canonicalizers(msgs, context.pinv_eps)
+    bond_dim = context.max_bond_dim
+    trunc_lmbds = lmbds.batch_truncate_all_but(bond_dim)
+    state.lmbds = trunc_lmbds
+    trunc_canonicalizers = canonicalizers.batch_truncate_all_but(bond_dim, [0])
+    degree_to_tensor = state.degree_to_tensor
+    for degree, layout in context.degree_to_layout.items():
+        aligned_canonicalizers = tuple(
+            trunc_canonicalizers.batch_slice(idx) for idx in layout.input_msgs_position
+        )
+        aligned_couplings = tuple(a * time for a in layout.edge_ampls)
+        degree_to_tensor[degree] = degree_to_tensor[degree].apply_canonicalizers_with_extensions(
+            aligned_canonicalizers,
+            aligned_couplings
+        )
+    log.debug(f"Layer of interaction gates with truncation has been applied, current bond dimension is {state.bond_dim}")
+
+
 def measure(context: Context, state: State) -> list:
     measurement_outcomes = {}
     threshold = context.measurement_threshold
@@ -213,7 +261,7 @@ def measure(context: Context, state: State) -> list:
 
     def get_not_measured_ground_probs() -> dict[int, float]:
         return {
-            node_id: dens[0, 0]
+            node_id: float(dens[0, 0].real)
             for node_id, dens in enumerate(get_density_matrices(context, state))
             if node_id not in measurement_outcomes
         }
@@ -240,43 +288,38 @@ def measure(context: Context, state: State) -> list:
         apply_and_register_measurement(1, node_id)
 
     def measure_nodes_above_threshold(not_measured_nodes: dict[int, float]) -> None:
-        above_thrshld = list(node_id for node_id, prob in not_measured_nodes.items() if prob > threshold)
-        for node_id in above_thrshld:
+        above_thrshld = {node_id : prob for node_id, prob in not_measured_nodes.items() if prob > threshold}
+        for node_id in above_thrshld.keys():
             apply_and_register_0_measurement(node_id)
-        log.debug(f"Nodes {above_thrshld} were above threshold and have been projected up")
+        log.debug(f"Nodes {above_thrshld} were above threshold {threshold} and have been projected up")
 
     def measure_nodes_below_threshold(not_measured_nodes: dict[int, float]) -> None:
-        below_thrshld = list(node_id for node_id, prob in not_measured_nodes.items() if prob < 1.0 - threshold)
-        for node_id in below_thrshld:
+        below_thrshld = {node_id : prob.real for node_id, prob in not_measured_nodes.items() if prob < 1.0 - threshold}
+        for node_id in below_thrshld.keys():
             apply_and_register_1_measurement(node_id)
-        log.debug(f"Nodes {below_thrshld} were below threshold and have been projected down")
+        log.debug(f"Nodes {below_thrshld} were below threshold {1.0 - threshold} and have been projected down")
 
+    log.debug("Measurement outcomes sampling started")
     while is_not_all_measured():
         not_measured_ground_probs = get_not_measured_ground_probs()
-        node_id, prob = min(not_measured_ground_probs.items(), key=get_z_abs_value)
+        node_id, prob = max(not_measured_ground_probs.items(), key=get_z_abs_value)
         measurement_outcome = sample_outcome(prob)
-        log.debug(f"Node {node_id} had highest uncertainty and has been measured")
+        log.debug(f"Node {node_id} the most determined (spin-up probability {prob} and spin-down probability {1 - prob}) and has been measured")
         apply_and_register_measurement(measurement_outcome, node_id)
-        _run_bp(context, state, is_sampling_stage=True)
+        _run_bp(context, state)
         not_measured_ground_probs = get_not_measured_ground_probs()
         measure_nodes_above_threshold(not_measured_ground_probs)
         measure_nodes_below_threshold(not_measured_ground_probs)
-        _run_bp(context, state, is_sampling_stage=True)
-    _set_to_vidal_gauge(context, state)
-    _truncate_vidal_gauge(context, state)
-    _set_to_symmetric_gauge(context, state)
-    _run_bp(context, state, is_sampling_stage=True)
+        _run_bp(context, state)
     measurement_outcomes = [measurement_outcomes[node_id] for node_id in range(len(measurement_outcomes))]
-    log.info("Sampling measurement outcomes completed")
+    log.info("Measurement outcomes sampling completed")
     return measurement_outcomes
 
 
 def run_layer(context: Context, xtime: float, ztime: float, state: State) -> None:
+    _simple_update(context, ztime, state)
     _apply_z_layer(context, ztime, state)
-    _run_bp(context, state)
-    _set_to_vidal_gauge(context, state)
-    _truncate_vidal_gauge(context, state)
+    _apply_x_layer(xtime, state)
     _set_to_symmetric_gauge(context, state)
     _run_bp(context, state)
-    _apply_x_layer(xtime, state)  # in all subroutines state is also mutated accordingly
-    log.info(f"Layer with ztime {ztime} and xtime {xtime} is applied")
+    log.info(f"Layer with ztime {ztime} and xtime {xtime} has been applied")

@@ -16,17 +16,18 @@ config = {
     "max_bond_dim" : 4,
     "backend" : "numpy",
     "schedule" : {
-        "total_time" : 10.,
+        "total_time" : 100.,
         "starting_mixing" : 1.,
         "actions" : [
             {
-                "time" : 1.,
-                "steps_number" : 100,
+                "weight" : 1.,
+                "steps_number" : 1000,
                 "final_mixing" : 0.0,
             },
             "measure",
         ]
     },
+    "runtime_limit" : 1,
 }
 
 bptn_result = run_qa(config)

@@ -1,4 +1,3 @@
-from typing import Any
 from bqa.backends import BACKEND_STR_TO_BACKEND
 from bqa.config.schedule_syntax import DEFAULT_SCHEDULE, _analyse_schedule
 from bqa.config.utils import (
@@ -9,23 +8,39 @@ from bqa.config.utils import (
     _analyse_positive_int,
     _analyse_half_to_1_number,
     _analyse_0_to_1_number,
-    _ok_or_default_and_warn,
-    _unwrap_or,
+    _get_or_default_and_warn,
+    _get_or_raise,
 )
 
-# types
+# keywords
 
-Edge = tuple[int, int]
+NODES_KEY = "nodes"
 
-NodeToAmpl = dict[int, float]
+EDGES_KEY = "edges"
 
-EdgeToAmpl = dict[Edge, float]
+DEFAULT_FIELD_KEY = "default_field"
 
-Config = dict[str, Any]
+SCHEDULE_KEY = "schedule"
+
+MAX_BOND_DIM_KEY = "max_bond_dim"
+
+MAX_BP_ITER_NUMBER_KEY = "max_bp_iter_number"
+
+SEED_KEY = "seed"
+
+BP_EPS_KEY = "bp_eps"
+
+PINV_EPS_KEY = "pinv_eps"
+
+MEASUREMENT_THRESHOLD_KEY = "measurement_threshold"
+
+DAMPING_KEY = "damping"
+
+BACKEND_KEY = "backend" 
 
 # defaults
 
-DEFAULT_NODES = []
+DEFAULT_NODES = {}
 
 DEFAULT_MAX_BOND_DIM = 4
 
@@ -45,7 +60,7 @@ DEFAULT_SEED = 42
 
 DEFAULT_DAMPING = 0.
 
-def _analyse_backend(backend) -> str:
+def _analyse_backend(backend):
     if isinstance(backend, str):
         if backend not in BACKEND_STR_TO_BACKEND:
             raise ConfigSyntaxError(f"Unknown backend \"{backend}\", available backends {BACKEND_STR_TO_BACKEND}")
@@ -55,10 +70,10 @@ def _analyse_backend(backend) -> str:
         raise ConfigSyntaxError(f"Invalid backend \"{backend}\"")
 
 
-def _analyse_nodes(nodes) -> NodeToAmpl:
+def _analyse_nodes(nodes):
     analysed_nodes = {}
 
-    def analyse_insert_node(node) -> None:
+    def analyse_insert_node(node):
         if isinstance(node, (tuple, list)) and len(node) == 2:
             try:
                 node_id = _analyse_non_neg_int(node[0])
@@ -84,7 +99,7 @@ def _analyse_nodes(nodes) -> NodeToAmpl:
         raise ConfigSyntaxError(f"Invalid nodes {nodes}")
 
 
-def _analyse_edge_id(edge_id) -> tuple[int, int]:
+def _analyse_edge_id(edge_id):
     if isinstance(edge_id, (list, tuple)) and len(edge_id) == 2:
         try:
             lhs = _analyse_non_neg_int(edge_id[0])
@@ -100,11 +115,11 @@ def _analyse_edge_id(edge_id) -> tuple[int, int]:
         raise ConfigSyntaxError(f"Invalid edge ID {edge_id}")
 
 
-def _analyse_edges(edges) -> EdgeToAmpl:
+def _analyse_edges(edges):
     forward_edges = {}
     backward_edges = {}
 
-    def analyse_insert_edge(edge) -> None:
+    def analyse_insert_edge(edge):
         if isinstance(edge, (tuple, list)) and len(edge) == 2:
             try:
                 lhs, rhs = _analyse_edge_id(edge[0])
@@ -139,97 +154,39 @@ def _analyse_edges(edges) -> EdgeToAmpl:
         raise ConfigSyntaxError(f"Invalid edges {edges}")
 
 
-def _get_field_or_default_and_warn(config: dict, field: str, default, msg: str):
-    return _ok_or_default_and_warn(config.get(field), default, msg)
-
-
-def _analyse_config(config) -> Config:
+def _analyse_config(config):
     if isinstance(config, dict):
         try:
-            nodes = _get_field_or_default_and_warn(
-                config,
-                "nodes",
-                DEFAULT_NODES,
-                f"`nodes` field is missing in config, set to {DEFAULT_NODES}",
-            )
-            edges = _unwrap_or(config.get("edges"), "`edges` field is missing")
-            schedule = _get_field_or_default_and_warn(
-                config,
-                "schedule",
-                DEFAULT_SCHEDULE,
-                f"`schedule` field is missing, set to {DEFAULT_SCHEDULE}",
-            )
-            max_bond_dim = _get_field_or_default_and_warn(
-                config,
-                "max_bond_dim",
-                DEFAULT_MAX_BOND_DIM,
-                f"`max_bond_dim` field is missing, set to {DEFAULT_MAX_BOND_DIM}",
-            )
-            max_bp_iters_number = _get_field_or_default_and_warn(
-                config,
-                "max_bp_iters_number",
-                DEFAULT_MAX_BP_ITERS_NUMBER,
-                f"`max_bp_iters_number` field is missing, set to {DEFAULT_MAX_BP_ITERS_NUMBER}",
-            )
-            bp_eps = _get_field_or_default_and_warn(
-                config,
-                "bp_eps",
-                DEFAULT_BP_EPS,
-                f"`bp_eps` field is missing, set to {DEFAULT_BP_EPS}",
-            )
-            pinv_eps = _get_field_or_default_and_warn(
-                config,
-                "pinv_eps",
-                DEFAULT_PINV_EPS,
-                f"`pinv_eps` fileld is missing, set to {DEFAULT_PINV_EPS}",
-            )
-            backend = _get_field_or_default_and_warn(
-                config,
-                "backend",
-                DEFAULT_BACKEND,
-                f"`backend` field is missing, set to {DEFAULT_BACKEND}",
-            )
-            default_field = _get_field_or_default_and_warn(
-                config,
-                "default_field",
-                DEFAULT_DEFAULT_FIELD,
-                f"`default_field` field is missing, set to  {DEFAULT_DEFAULT_FIELD}",
-            )
-            measurement_threshold = _get_field_or_default_and_warn(
-                config,
-                "measurement_threshold",
-                DEFAULT_MEASUREMENT_THRESHOLD,
-                f"`measurement_threshold` field is missing, set to {DEFAULT_MEASUREMENT_THRESHOLD}",
-            )
-            seed = _get_field_or_default_and_warn(
-                config,
-                "seed",
-                DEFAULT_SEED,
-                f"`seed` field is missing, set to {DEFAULT_SEED}",
-            )
-            damping = _get_field_or_default_and_warn(
-                config,
-                "damping",
-                DEFAULT_DAMPING,
-                f"`damping` field is missing, set to {DEFAULT_DAMPING}",
-            )
+            nodes = _get_or_default_and_warn(config, NODES_KEY, DEFAULT_NODES, "config")
+            edges = _get_or_raise(config, EDGES_KEY, "config")
+            schedule = _get_or_default_and_warn(config, SCHEDULE_KEY, DEFAULT_SCHEDULE, "config")
+            max_bond_dim = _get_or_default_and_warn(config, MAX_BOND_DIM_KEY, DEFAULT_MAX_BOND_DIM, "config")
+            max_bp_iters_number = _get_or_default_and_warn(config, MAX_BP_ITER_NUMBER_KEY, DEFAULT_MAX_BP_ITERS_NUMBER, "config")
+            bp_eps = _get_or_default_and_warn(config, BP_EPS_KEY, DEFAULT_BP_EPS, "config")
+            pinv_eps = _get_or_default_and_warn(config, PINV_EPS_KEY, DEFAULT_PINV_EPS, "config")
+            backend = _get_or_default_and_warn(config, BACKEND_KEY, DEFAULT_BACKEND, "config")
+            default_field = _get_or_default_and_warn(config, DEFAULT_FIELD_KEY, DEFAULT_DEFAULT_FIELD, "config")
+            measurement_threshold = _get_or_default_and_warn(config, MEASUREMENT_THRESHOLD_KEY, DEFAULT_MEASUREMENT_THRESHOLD, "config")
+            seed = _get_or_default_and_warn(config, SEED_KEY, DEFAULT_SEED, "config")
+            damping = _get_or_default_and_warn(config, DAMPING_KEY, DEFAULT_DAMPING, "config")
             return {
-                "nodes": _analyse_nodes(nodes),
-                "edges": _analyse_edges(edges),
-                "default_field": _analyse_number(default_field),
-                "schedule": _analyse_schedule(schedule),
-                "max_bond_dim": _analyse_positive_int(max_bond_dim),
-                "max_bp_iters_number": _analyse_non_neg_int(max_bp_iters_number),
-                "seed": _analyse_non_neg_int(seed),
-                "bp_eps": _analyse_non_neg_number(bp_eps),
-                "pinv_eps": _analyse_0_to_1_number(pinv_eps),
-                "measurement_threshold": _analyse_half_to_1_number(
+                NODES_KEY : _analyse_nodes(nodes),
+                EDGES_KEY : _analyse_edges(edges),
+                DEFAULT_FIELD_KEY : _analyse_number(default_field),
+                SCHEDULE_KEY : _analyse_schedule(schedule),
+                MAX_BOND_DIM_KEY : _analyse_positive_int(max_bond_dim),
+                MAX_BP_ITER_NUMBER_KEY : _analyse_non_neg_int(max_bp_iters_number),
+                SEED_KEY : _analyse_non_neg_int(seed),
+                BP_EPS_KEY : _analyse_non_neg_number(bp_eps),
+                PINV_EPS_KEY : _analyse_0_to_1_number(pinv_eps),
+                MEASUREMENT_THRESHOLD_KEY : _analyse_half_to_1_number(
                     measurement_threshold
                 ),
-                "damping": _analyse_0_to_1_number(damping),
-                "backend": _analyse_backend(backend),
+                DAMPING_KEY : _analyse_0_to_1_number(damping),
+                BACKEND_KEY : _analyse_backend(backend),
             }
         except ConfigSyntaxError as e:
             raise ConfigSyntaxError(f"Invalid config {config}") from e
     else:
-        raise ConfigSyntaxError(f"Invalid config {config}")
+        raise ConfigSyntaxError(f"Config must be a dict, but got {config} of type {type(config)}")
+

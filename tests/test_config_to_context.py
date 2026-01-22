@@ -6,7 +6,6 @@ import numpy as np
 from bqa.backends import NumPyBackend
 from bqa.config.core import config_to_context
 from bqa.config.config_canonicalization import Layout
-from bqa.config.schedule_canonicalization import Instruction
 
 logging.basicConfig(
     level=logging.ERROR,
@@ -22,12 +21,12 @@ def assert_isclose_numeric_dicts_order_sensetive(lhs: dict, rhs: dict) -> None:
         assert isclose(lhs_val, rhs_val)
 
 
-def sum_x_and_y_times(instruction: Instruction) -> float:
+def sum_x_and_y_times(instruction) -> float:
     assert isinstance(instruction, dict)
     return instruction["xtime"] + instruction["ztime"]
 
 
-def div_x_by_sum_x_and_y_times(instruction: Instruction) -> float:
+def div_x_by_sum_x_and_y_times(instruction) -> float:
     assert isinstance(instruction, dict)
     xtime = instruction["xtime"]
     return xtime / (instruction["ztime"] + xtime)
@@ -50,18 +49,20 @@ def test_config_to_context():
                 "starting_mixing": 0.8,
                 "total_time": 5,
                 "actions": [
-                    {"time": 0.4, "final_mixing": 0.3, "steps_number": 8},
+                    {"weight": 0.4, "final_mixing": 0.3, "steps_number": 8},
                     "measure",
-                    {"time": 0.6, "final_mixing": 0.11, "steps_number": 10},
+                    {"type": "imag_time_evolution", "weight": 0.6, "final_mixing": 0.11, "steps_number": 10},
                     "get_density_matrices",
                 ],
             },
+            "damping" : 0.3,
         },
     )
     assert context.edges_number == 12
     assert context.nodes_number == 7
     assert context.max_bp_iters_number == 100
     assert isclose(context.bp_eps, 1e-10)
+    assert isclose(context.damping, 0.3)
     assert context.max_bond_dim == 4
     assert len(context.degree_to_layout) == 3
     assert context.degree_to_layout[0] == Layout(

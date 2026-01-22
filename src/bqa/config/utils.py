@@ -1,10 +1,4 @@
 import logging
-from typing import Any, Callable, Iterable, Iterator, Optional, TypeVar
-
-T = TypeVar("T")
-
-S = TypeVar("S")
-
 
 class ConfigSyntaxError(ValueError):
     pass
@@ -13,43 +7,32 @@ class ConfigSyntaxError(ValueError):
 log = logging.getLogger(__name__)
 
 
-def _filtermap(it: Iterable[T], func: Callable[[T], Optional[S]]) -> Iterator[S]:
-    for elem in it:
-        if (val := func(elem)) is not None:
-            yield val
-
-
-def _is_sequential(smthng) -> bool:
+def _is_sequential(smthng):
     return isinstance(smthng, (list, tuple))
 
 
-def _ok_or_default_and_warn(value: Optional[Any], default: T, msg: str) -> Any | T:
-    if value is None:
-        log.warning(msg)
-        return default
-    else:
-        return value
+def _get_or_default_and_warn(dct, key, default, where):
+    val = dct.get(key)
+    if val is None:
+        log.warning(f"`{key}` field is missing in {where}, set to default {default}")
+        val = default
+    return val
+
+def _get_or_raise(dct, key, where):
+    val = dct.get(key)
+    if val is None:
+        raise ConfigSyntaxError(f"`{key}` field is missing in {where}")
+    return val
 
 
-def _unwrap_or(value: Optional[T], err_msg: str) -> T:
-    if value is None:
-        raise ConfigSyntaxError(err_msg)
-    else:
-        return value
-
-
-def _analyse_atomic_value(
-    func: Callable[[Any], bool],
-    value: T,
-    err_msg: str,
-) -> T:
+def _analyse_atomic_value(func, value, err_msg):
     if func(value):
         return value
     else:
         raise ConfigSyntaxError(f"Invalid value {value}, {err_msg}")
 
 
-def _analyse_non_neg_number(value) -> float:
+def _analyse_non_neg_number(value):
     number = _analyse_atomic_value(
         lambda x: isinstance(x, (float, int)) and x >= 0.0,
         value,
@@ -58,7 +41,7 @@ def _analyse_non_neg_number(value) -> float:
     return float(number)
 
 
-def _analyse_0_to_1_number(value) -> float:
+def _analyse_0_to_1_number(value):
     number = _analyse_atomic_value(
         lambda x: isinstance(x, (float, int)) and x >= 0.0 and x <= 1.0,
         value,
@@ -67,7 +50,7 @@ def _analyse_0_to_1_number(value) -> float:
     return float(number)
 
 
-def _analyse_half_to_1_number(value) -> float:
+def _analyse_half_to_1_number(value):
     number = _analyse_atomic_value(
         lambda x: isinstance(x, (float, int)) and x >= 0.5 and x <= 1.0,
         value,
@@ -76,19 +59,19 @@ def _analyse_half_to_1_number(value) -> float:
     return float(number)
 
 
-def _analyse_non_neg_int(value) -> int:
+def _analyse_non_neg_int(value):
     return _analyse_atomic_value(
         lambda x: isinstance(x, int) and x >= 0, value, "must be a non-negative `int`"
     )
 
 
-def _analyse_positive_int(value) -> int:
+def _analyse_positive_int(value):
     return _analyse_atomic_value(
         lambda x: isinstance(x, int) and x > 0, value, "must be a positive `int`"
     )
 
 
-def _analyse_number(value) -> float:
+def _analyse_number(value):
     number = _analyse_atomic_value(
         lambda x: isinstance(x, (float, int)),
         value,
@@ -97,6 +80,7 @@ def _analyse_number(value) -> float:
     return float(number)
 
 
-def vectorized_append(lists: list[list[T]], elems: Iterable[T]) -> None:
+def vectorized_append(lists, elems):
     for lst, elem in zip(lists, elems):
         lst.append(elem)
+

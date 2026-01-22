@@ -20,7 +20,7 @@ config = {
         "starting_mixing" : 1.,
         "actions" : [
             {
-                "time" : 1.,
+                "weight" : 1.,
                 "steps_number" : 100,
                 "final_mixing" : 0.0,
             },

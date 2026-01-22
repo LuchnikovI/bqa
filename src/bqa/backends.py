@@ -17,6 +17,8 @@ log = logging.getLogger(__name__)
 
 SQRT_NEG_1J = sqrt(2.) / 2. - 1j * sqrt(2.) / 2.
 
+SQRT_1J = sqrt(2.) / 2. + 1j * sqrt(2.) / 2.
+
 RawTensor = TypeVar("RawTensor")
 
 BACKEND_STR_TO_BACKEND = {}
@@ -368,25 +370,46 @@ class Tensor(ABC, Generic[RawTensor]):
 
         return reduce(apply_msg, enumerate(msgs), self)
 
-    def _compute_msg(self, self_conj: Self,  msgs: tuple[Self, ...], idx: int) -> Self:
+    def _compute_msg(self, self_conj: Self, msgs: tuple[Self, ...], idx: int, evolution_times: Optional[tuple[Self, ...]]) -> Self:
         tensor_msgs = self._apply_msgs_but_one(msgs, idx)
         rank = self.batch_rank
         indices = [i for i in range(rank) if i != idx + 1]
+        if evolution_times is not None:
+            tensor_msgs = tensor_msgs._apply_conditional_z_gate_to_single_axis(idx + 1, evolution_times[idx])
+            self_conj = self_conj._apply_conditional_z_gate_to_single_axis(idx + 1, evolution_times[idx], is_conj=True)
         return (
             self_conj
             .batch_tensordot(tensor_msgs, [indices, indices])
             .batch_trace_normalize()
         )
 
-    def pass_msgs(self, msgs: tuple[Self, ...]) -> tuple[Self, ...]:
+    def pass_msgs(self, msgs: tuple[Self, ...], evolution_times: Optional[tuple[Self, ...]] = None) -> tuple[Self, ...]:
         self_conj = self.conj()
-        return tuple(self._compute_msg(self_conj, msgs, idx) for idx in range(len(msgs)))
+        return tuple(self._compute_msg(self_conj, msgs, idx, evolution_times) for idx in range(len(msgs)))
 
     def apply_canonicalizers(self, canonicalizers: tuple[Self, ...]) -> Self:
         assert self.batch_rank - 1 == len(canonicalizers)
         return reduce(
             lambda t, c: t.batch_tensordot(c, [[1], [0]]), canonicalizers, self
         )
+
+    def apply_canonicalizers_with_extensions(
+            self,
+            canonicalizers: tuple[Self, ...],
+            couplings: tuple[Self, ...],
+    ) -> Self:
+        assert self.batch_rank - 1 == len(canonicalizers)
+
+        def apply_canonicalizer(
+                tensor: Self,
+                canonicalizer_and_coupling: tuple[Self, Self],
+        ) -> Self:
+            canonicalizer, coupling = canonicalizer_and_coupling
+            return (tensor
+                    ._apply_conditional_z_gate_to_single_axis(1, coupling)
+                    .batch_tensordot(canonicalizer, [[1], [0]]))
+
+        return reduce(apply_canonicalizer, zip(canonicalizers, couplings), self)
 
     def _apply_x_to_phys_dim(self) -> Self:
         return self.apply_to_raw_tensor(self.apply_x_to_phys_dim_raw)
@@ -473,9 +496,13 @@ class Tensor(ABC, Generic[RawTensor]):
     def _batch_concatenate(self, other: Self, axis: int) -> Self:
         return self.apply_to_raw_tensor(self.concatenate_raw_tensors, other.raw_tensor, axis + 1)
 
-    def _apply_conditional_z_gate_to_single_axis(self, axis: int, coupling: Self) -> Self:
-        up = self._mul_by_constants(coupling.cos().sqrt())
-        down = self._apply_z_to_phys_dim()._mul_by_constants(SQRT_NEG_1J * coupling.sin().sqrt())
+    def _apply_conditional_z_gate_to_single_axis(self, axis: int, coupling: Self, is_conj: bool = False) -> Self:
+        if is_conj:
+            up = self._mul_by_constants(coupling.cos().sqrt().conj())
+            down = self._apply_z_to_phys_dim()._mul_by_constants(SQRT_1J * coupling.sin().sqrt().conj())
+        else:
+            up = self._mul_by_constants(coupling.cos().sqrt())
+            down = self._apply_z_to_phys_dim()._mul_by_constants(SQRT_NEG_1J * coupling.sin().sqrt())
         return up._batch_concatenate(down, axis)
 
     def apply_conditional_z_gates(self, couplings: Iterable[Self]) -> Self:
@@ -485,13 +512,6 @@ class Tensor(ABC, Generic[RawTensor]):
             return acc._apply_conditional_z_gate_to_single_axis(axis, coupling)
 
         return reduce(reduction_func, ((i + 1, c) for i, c in enumerate(couplings)), self).batch_normalize()
-
-    def extend_msgs(self) -> Self:
-        d, d_rhs = self.batch_shape
-        assert d == d_rhs
-        eye = self.make_from_numpy(np.eye(2, dtype=NP_DTYPE).reshape((1, 2, 2, 1, 1)))
-        extended_msgs = (self.batch_reshape((1, 1, d, d)) * eye).batch_transpose((0, 2, 1, 3)).batch_reshape((2 * d, 2 * d))
-        return extended_msgs.batch_trace_normalize()
 
     def compute_minimal_rank_from_lmbd(self, eps: float) -> int:
         return self.compute_minimal_rank_from_raw_lmbds(self.raw_tensor, eps)
@@ -687,7 +707,7 @@ class NumPyBackend(Tensor):
     def measure_raw_tensor_by_position_in_place(
         raw_tensor: NDArray, position: int, outcome
     ) -> None:
-        raw_tensor[position, 0 if outcome else 1] = 0.0
+        raw_tensor[position, 1 - outcome] = 0.0
         raw_tensor /= np.linalg.norm(raw_tensor)
 
 
@@ -885,7 +905,7 @@ try:
         def measure_raw_tensor_by_position_in_place(
             raw_tensor, position: int, outcome
         ) -> None:
-            raw_tensor[position, 0 if outcome else 1] = 0.0
+            raw_tensor[position, 1 - outcome] = 0.0
             raw_tensor /= cp.linalg.norm(raw_tensor)
 
 

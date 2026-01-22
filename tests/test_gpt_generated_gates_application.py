@@ -88,16 +88,6 @@ def test_conditional_z_zero_is_identity():
     recovered = psi2.numpy[:, :, 0]
     assert np.allclose(recovered, psi.numpy[:, :, 0])
 
-def test_extend_msgs_doubles_dim():
-    msgs = NumPyBackend.make_from_numpy(
-        np.eye(2, dtype=NP_DTYPE)[None, :, :]
-    )
-
-    msgs2 = msgs.extend_msgs()
-
-    assert msgs2.numpy.shape[-1] == 4
-    assert msgs2.numpy.shape[-2] == 4
-
 def test_small_layer_does_not_break():
     psi = make_single_qubit_tensor([1/np.sqrt(2), 1/np.sqrt(2)])
 

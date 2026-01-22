@@ -87,7 +87,7 @@ config = {
 
             # QA instruction describing annealing dynamics:
             {
-                "time" : 1., # -----------> the part of the "physical" time dedicated to this instruction
+                "weight" : 1., # -----------> the weight of the "physical" time dedicated to this instruction
 
                 "steps_number" : 100, # --> number of discrete time steps within this instruction
 
