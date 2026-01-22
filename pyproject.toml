@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "bqa"
-version = "0.1.0"
+version = "0.1.1"
 description = "A framework for tensor-network–based quantum annealing simulation powered by belief propagation."
 authors = ["Ilia-Luchnikov <luchnikovilya@gmail.com>"]
 readme = "README.md"
@@ -13,6 +13,7 @@ packages = [{include = "bqa", from = "src"}]
 [tool.poetry.dependencies]
 python = ">=3.10,<3.14"
 numpy = "^2.0.0"
+networkx = "^3.0"
 
 [tool.poetry.group.test]
 optional = true
