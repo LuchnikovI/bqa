@@ -80,7 +80,7 @@ def run_qa_exact(config) -> list:
             return _run_layer_sv(context, instruction["xtime"], instruction["ztime"], state)
         elif instruction == "measure":
             return _measure_sv(context, state)
-        elif instruction == "get_density_matrices":
+        elif instruction == "get_bloch_vectors":
             return _get_bloch_vectors_sv(context, state)
         else:
             raise ValueError(f"Unknown instruction {instruction}")

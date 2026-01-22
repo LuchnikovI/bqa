@@ -95,7 +95,7 @@ config = {
             },
 
             # QA instruction requesting to collect density matrices into a list
-            "get_density_matrices",
+            "get_bloch_vectors",
 
             # QA instruction requesting to perform measurements of all nodes, results are collected as integer values into a list
             "measure",

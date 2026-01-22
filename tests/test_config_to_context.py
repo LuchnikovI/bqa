@@ -52,7 +52,7 @@ def test_config_to_context():
                     {"weight": 0.4, "final_mixing": 0.3, "steps_number": 8},
                     "measure",
                     {"type": "imag_time_evolution", "weight": 0.6, "final_mixing": 0.11, "steps_number": 10},
-                    "get_density_matrices",
+                    "get_bloch_vectors",
                 ],
             },
             "damping" : 0.3,

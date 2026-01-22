@@ -21,7 +21,7 @@ def run_qa(config) -> list:
             return run_layer(context, instruction["xtime"], instruction["ztime"], state)
         elif instruction == "measure":
             return ["measurement_outcomes", measure(context, state)]
-        elif instruction == "get_density_matrices":
+        elif instruction == "get_bloch_vectors":
             return [
                 "bloch_vectors",
                 list(map(convert_density_matrix_to_bloch_vector, get_density_matrices(context, state))),
