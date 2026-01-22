@@ -15,5 +15,7 @@ CONFIG = {
 }
 
 def test_small_circuit_final_density():
-    assert np.linalg.norm(run_qa(CONFIG)[0] - run_qa_exact(CONFIG)[0]) < 1e-5
+    for lhs_bloch, rhs_bloch in zip(run_qa(CONFIG)[0][1], run_qa_exact(CONFIG)[0][1]):
+        for lhs_elem, rhs_elem in zip(lhs_bloch, rhs_bloch):
+            assert abs(lhs_elem - rhs_elem) < 1e-5
 

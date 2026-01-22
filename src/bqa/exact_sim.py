@@ -3,11 +3,12 @@ from numpy.typing import NDArray
 from numpy.random import uniform
 from bqa.config.config_canonicalization import Context
 from bqa.config.core import config_to_context
+from bqa.utils import convert_density_matrix_to_bloch_vector
 
 try:
     from qem import QuantumState
 except ImportError as e:
-    print("Exact quantum computing simulator is not install. To instal it one needs: \n1) install rust (see https://rust-lang.org/tools/install/) \n2) install maturin (pip install maturin) \n3) install bqa with test deps (poetry install --with test).")
+    print("Exact quantum computing simulator is not installed. To instal it one needs: \n1) install rust (see https://rust-lang.org/tools/install/) \n2) install maturin (pip install maturin) \n3) install bqa with test deps (poetry install --with test).")
     raise e
 
 FLIPPED_HADAMARD = (1. / np.sqrt(2.)) * np.array([
@@ -63,10 +64,10 @@ def _run_layer_sv(context: Context, xtime: float, ztime: float, state: QuantumSt
 
 # in the given API it is problematic to fix a seed, so we do not do this and the computation is not reproducable
 def _measure_sv(context: Context, state: QuantumState) -> list:
-    return [1 - 2 * state.measure(pos, uniform(0., 1., 1)) for pos in range(context.nodes_number)]
+    return ["measurement_outcomes", [1 - 2 * state.measure(pos, uniform(0., 1., 1)) for pos in range(context.nodes_number)]]
 
-def _get_density_matrices_sv(context: Context, state: QuantumState) -> NDArray:
-    return np.concatenate([state.dens1(pos)[np.newaxis] for pos in range(context.nodes_number)], axis=0)
+def _get_bloch_vectors_sv(context: Context, state: QuantumState) -> list:
+    return ["bloch_vectors", list([convert_density_matrix_to_bloch_vector(state.dens1(pos)) for pos in range(context.nodes_number)])]
 
 def run_qa_exact(config) -> list:
     context = config_to_context(config)
@@ -80,7 +81,7 @@ def run_qa_exact(config) -> list:
         elif instruction == "measure":
             return _measure_sv(context, state)
         elif instruction == "get_density_matrices":
-            return _get_density_matrices_sv(context, state)
+            return _get_bloch_vectors_sv(context, state)
         else:
             raise ValueError(f"Unknown instruction {instruction}")
     instr_exec_iter = (execute_instruction(instr) for instr in context.instructions)

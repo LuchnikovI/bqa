@@ -1,7 +1,6 @@
 import logging
 from bqa import run_qa
 from bqa.exact_sim import run_qa_exact
-from utils import get_trace_distance
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -106,12 +105,12 @@ config = {
 
 bptn_result = run_qa(config)  # run_qa runs BPTN based quantum annealing simulation
 exact_result = run_qa_exact(config)  # run_qa_exact runs exact quantum annealing simulation
-trace_distances = map(get_trace_distance, bptn_result[0], exact_result[0])
 
 print("SIMULATION RESULTS:")
 
-for node_id, trace_distance in enumerate(trace_distances):
-    print(f"For node {node_id} trace distance between final exact and TNBP based density matrix is {trace_distance}")
+for node_id, (bptn_bloch, exact_bloch) in enumerate(zip(bptn_result[0][1], exact_result[0][1])):
+    print(f"Node {node_id}, BPTN  Bloch vector {bptn_bloch}")
+    print(f"Node {node_id}, Exact Bloch vector {exact_bloch}")
 
 print(f"Measurement results for BPTN based simulation: {bptn_result[1]}")
 print(f"Measurement results for exact simulation:      {exact_result[1]}")
