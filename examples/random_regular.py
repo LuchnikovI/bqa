@@ -3,7 +3,7 @@ from bqa import run_qa
 from bqa.benchmarking import generate_qubo_on_random_regular_graph
 
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
@@ -16,12 +16,12 @@ config = {
     "max_bond_dim" : 4,
     "backend" : "numpy",
     "schedule" : {
-        "total_time" : 100.,
+        "total_time" : 10.,
         "starting_mixing" : 1.,
         "actions" : [
             {
                 "weight" : 1.,
-                "steps_number" : 1000,
+                "steps_number" : 100,
                 "final_mixing" : 0.0,
             },
             "measure",
@@ -30,6 +30,4 @@ config = {
     "runtime_limit" : 1,
 }
 
-bptn_result = run_qa(config)
-
-print(bptn_result)
+print(run_qa(config))

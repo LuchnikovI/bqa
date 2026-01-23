@@ -3,7 +3,7 @@ from bqa import run_qa
 from bqa.benchmarking import generate_qubo_on_2d_grid
 
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
@@ -29,6 +29,4 @@ config = {
     },
 }
 
-bptn_result = run_qa(config)
-
-print(bptn_result)
+print(run_qa(config))
