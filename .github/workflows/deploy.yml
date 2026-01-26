@@ -51,8 +51,6 @@ jobs:
   build-and-push-docker:
     needs: publish-to-pypi
     runs-on: ubuntu-latest
-    # Makes Environment variables (Settings -> Environments -> AWS -> Variables) available via `vars.*`
-    environment: AWS
 
     steps:
       - name: Checkout repository
@@ -64,13 +62,12 @@ jobs:
           set -euo pipefail
           if [[ -z "${AWS_REGION:-}" ]]; then
             echo "Missing AWS_REGION."
-            echo "If you set it as an Environment variable, ensure this job has 'environment: AWS'."
-            echo "If you set it as a Repository variable, ensure it exists under Settings -> Secrets and variables -> Actions -> Variables."
+            echo "Ensure it exists under Settings -> Secrets and variables -> Actions -> Variables (Repository variables)."
             exit 1
           fi
           if [[ -z "${AWS_ROLE_TO_ASSUME:-}" ]]; then
             echo "Missing AWS_ROLE_TO_ASSUME."
-            echo "If you set it as an Environment variable, ensure this job has 'environment: AWS'."
+            echo "Ensure it exists under Settings -> Secrets and variables -> Actions -> Variables (Repository variables)."
             exit 1
           fi
 
