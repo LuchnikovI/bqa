@@ -3,7 +3,7 @@ name: Publish to PyPI & Deploy Docker to ECR
 on:
   workflow_dispatch:
   push:
-    branches: [ develop ]
+    branches: [ develop, main ]
 
 permissions:
   contents: read
@@ -35,17 +35,40 @@ jobs:
       - name: Build package
         run: poetry build
 
-      - name: Publish to Test PyPI
-        env:
-          POETRY_PYPI_TOKEN_TESTPYPI: ${{ secrets.TEST_PYPI_API_TOKEN }}
+      - name: Validate branch
         run: |
-          poetry config repositories.testpypi https://test.pypi.org/legacy/
-          poetry publish -r testpypi
+          if [[ "${{ github.ref }}" != "refs/heads/main" && "${{ github.ref }}" != "refs/heads/develop" ]]; then
+            echo "ERROR: This workflow should only run on 'main' or 'develop' branches"
+            echo "Current branch: ${{ github.ref }}"
+            exit 1
+          fi
+
+      - name: Publish to PyPI (branch-dependent)
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "✅ Branch: main"
+            echo "📦 Publishing to official PyPI..."
+            poetry config pypi-token.pypi ${{ secrets.PYPI_API_TOKEN }}
+            poetry publish
+          elif [[ "${{ github.ref }}" == "refs/heads/develop" ]]; then
+            echo "✅ Branch: develop"
+            echo "🧪 Publishing to Test PyPI..."
+            poetry config repositories.testpypi https://test.pypi.org/legacy/
+            poetry config pypi-token.testpypi ${{ secrets.TEST_PYPI_API_TOKEN }}
+            poetry publish -r testpypi
+          else
+            echo "❌ ERROR: Unknown branch: ${{ github.ref }}"
+            exit 1
+          fi
 
       - name: Wait for package availability
         run: |
-          echo "Waiting 30 seconds for package to be available on Test PyPI..."
-          sleep 30
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "Package published to PyPI"
+          else
+            echo "Waiting 30 seconds for package to be available on Test PyPI..."
+            sleep 30
+          fi
 
   # JOB 2: Build Docker image and push to ECR (depends on Job 1)
   build-and-push-docker:
