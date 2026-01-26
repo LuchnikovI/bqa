@@ -3,7 +3,7 @@ name: Publish to PyPI & Deploy Docker to ECR
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
+    branches: [ fix-pipeline ]
 
 permissions:
   contents: read
