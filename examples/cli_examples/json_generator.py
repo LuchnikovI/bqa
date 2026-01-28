@@ -2,6 +2,7 @@
 
 import sys
 import logging
+from json import dumps
 from bqa.benchmarking import generate_qubo_on_2d_grid, generate_qubo_on_random_regular_graph
 
 logging.basicConfig(
@@ -12,7 +13,7 @@ logging.basicConfig(
 
 NEW_LINE = "\n"
 
-IDEN = "\t"
+INDEN = "\t"
 
 CLI_SPEC = {
     "--backend" : {
@@ -87,8 +88,8 @@ def gen_help_header(name):
 usage: {name} --help | *parameters generator *generator-args"""
 
 
-def get_arg_help(spec, name, ident = 1):
-    return f"{ident * IDEN}{name}: {spec['help']}, default value: {spec['default']}{NEW_LINE}"
+def get_arg_help(spec, name, indent = 1):
+    return f"{indent * INDEN}{name}: {spec['help']}, default value: {spec['default']}{NEW_LINE}"
 
 
 def gen_params_help():
@@ -102,9 +103,9 @@ def gen_generators_help():
     yield "Generators (usage: generator_name arg1-name arg1 arg2-name arg2 ...):\n"
     generators = CLI_SPEC["generators"]
     for name, spec in generators.items():
-        yield f"{IDEN}{name}: {spec['help']}, args:{NEW_LINE}"
+        yield f"{INDEN}{name}: {spec['help']}, args:{NEW_LINE}"
         for name, spec in spec["args"].items():
-            yield get_arg_help(spec, name, ident = 2)
+            yield get_arg_help(spec, name, indent = 2)
 
 
 def gen_help(name):
@@ -217,7 +218,7 @@ def main():
         print(get_help(name))
         exit(0)
     else:
-        print(parse_cli_args_to_config(coursor))
+        print(dumps(parse_cli_args_to_config(coursor), indent=2))
 
 if __name__ == "__main__":
     main()
