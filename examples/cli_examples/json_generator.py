@@ -10,6 +10,10 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 
+NEW_LINE = "\n"
+
+IDEN = "\t"
+
 CLI_SPEC = {
     "--backend" : {
         "default" : "numpy",
@@ -84,7 +88,7 @@ usage: {name} --help | *parameters generator *generator-args"""
 
 
 def get_arg_help(spec, name, ident = 1):
-    return f"{ident * '\t'}{name}: {spec['help']}, default value: {spec['default']}\n"
+    return f"{ident * IDEN}{name}: {spec['help']}, default value: {spec['default']}{NEW_LINE}"
 
 
 def gen_params_help():
@@ -98,7 +102,7 @@ def gen_generators_help():
     yield "Generators (usage: generator_name arg1-name arg1 arg2-name arg2 ...):\n"
     generators = CLI_SPEC["generators"]
     for name, spec in generators.items():
-        yield f"\t{name}: {spec['help']}, args:\n"
+        yield f"{IDEN}{name}: {spec['help']}, args:{NEW_LINE}"
         for name, spec in spec["args"].items():
             yield get_arg_help(spec, name, ident = 2)
 
