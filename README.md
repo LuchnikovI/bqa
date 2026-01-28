@@ -18,3 +18,7 @@ To validate the computation results, some examples and tests rely on an exact qu
 ## How to use?
 
 This package exposes a single entry point, `run_qa`, which executes the full workflow. It accepts a single argument which is a Python dictionary that fully specifies the quantum annealing task. This dictionary serves as a configuration or DSL and can be directly deserialized from JSON or other formats. For a concrete example of the configuration, see `./examples/small_ibm_heavy_hex.py`.
+
+## How to run benchmarks against MQLib?
+
+First, one need to install an [MQLib](https://github.com/MQLib/MQLib) wrapper awailable [here](https://github.com/LuchnikovI/mqlib_wrap), follow the instruction of README there. Now one can execute scripts in `./benchmarks_against_mqlib`, every script saves a result into a separate directory with time stamp.
