@@ -3,7 +3,7 @@ name: Publish to PyPI & Deploy Docker to ECR
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
+    branches: [ develop, main ]
 
 permissions:
   contents: read
@@ -35,24 +35,45 @@ jobs:
       - name: Build package
         run: poetry build
 
-      - name: Publish to Test PyPI
-        env:
-          POETRY_PYPI_TOKEN_TESTPYPI: ${{ secrets.TEST_PYPI_API_TOKEN }}
+      - name: Validate branch
         run: |
-          poetry config repositories.testpypi https://test.pypi.org/legacy/
-          poetry publish -r testpypi
+          if [[ "${{ github.ref }}" != "refs/heads/main" && "${{ github.ref }}" != "refs/heads/develop" ]]; then
+            echo "ERROR: This workflow should only run on 'main' or 'develop' branches"
+            echo "Current branch: ${{ github.ref }}"
+            exit 1
+          fi
+
+      - name: Publish to PyPI (branch-dependent)
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "✅ Branch: main"
+            echo "📦 Publishing to official PyPI..."
+            poetry config pypi-token.pypi ${{ secrets.PYPI_API_TOKEN }}
+            poetry publish
+          elif [[ "${{ github.ref }}" == "refs/heads/develop" ]]; then
+            echo "✅ Branch: develop"
+            echo "🧪 Publishing to Test PyPI..."
+            poetry config repositories.testpypi https://test.pypi.org/legacy/
+            poetry config pypi-token.testpypi ${{ secrets.TEST_PYPI_API_TOKEN }}
+            poetry publish -r testpypi
+          else
+            echo "❌ ERROR: Unknown branch: ${{ github.ref }}"
+            exit 1
+          fi
 
       - name: Wait for package availability
         run: |
-          echo "Waiting 30 seconds for package to be available on Test PyPI..."
-          sleep 30
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "Package published to PyPI"
+          else
+            echo "Waiting 30 seconds for package to be available on Test PyPI..."
+            sleep 30
+          fi
 
   # JOB 2: Build Docker image and push to ECR (depends on Job 1)
   build-and-push-docker:
     needs: publish-to-pypi
     runs-on: ubuntu-latest
-    # Makes Environment variables (Settings -> Environments -> AWS -> Variables) available via `vars.*`
-    environment: AWS
 
     steps:
       - name: Checkout repository
@@ -64,13 +85,12 @@ jobs:
           set -euo pipefail
           if [[ -z "${AWS_REGION:-}" ]]; then
             echo "Missing AWS_REGION."
-            echo "If you set it as an Environment variable, ensure this job has 'environment: AWS'."
-            echo "If you set it as a Repository variable, ensure it exists under Settings -> Secrets and variables -> Actions -> Variables."
+            echo "Ensure it exists under Settings -> Secrets and variables -> Actions -> Variables (Repository variables)."
             exit 1
           fi
           if [[ -z "${AWS_ROLE_TO_ASSUME:-}" ]]; then
             echo "Missing AWS_ROLE_TO_ASSUME."
-            echo "If you set it as an Environment variable, ensure this job has 'environment: AWS'."
+            echo "Ensure it exists under Settings -> Secrets and variables -> Actions -> Variables (Repository variables)."
             exit 1
           fi
 
