@@ -750,7 +750,7 @@ BACKEND_STR_TO_BACKEND["numpy"] = NumPyBackend
 
 try:
     import cupy as cp
-    CP_DTYPE = dispatch_precision(cp.complex64, cp.complex128)
+    CP_DTYPE = cp.complex64
 
     class CuPyBackend(Tensor):
 
@@ -767,7 +767,13 @@ try:
 
         @classmethod
         def make_from_numpy(cls, arr: NDArray) -> Self:
-            return cls(cp.array(arr))
+            if np.issubdtype(arr.dtype, np.integer):
+                cparr = cp.asarray(arr)
+            elif np.issubdtype(arr.dtype, np.complexfloating) or np.issubdtype(arr.dtype, np.floating):
+                cparr = cp.asarray(arr, dtype=CP_DTYPE)
+            else:
+                raise TypeError(f"Unsupported dtype {arr.dtype}")
+            return cls(cparr)
 
         @classmethod
         def make_from_raw_tensor(cls, raw_tensor) -> Self:
@@ -852,7 +858,9 @@ try:
         def batch_matmul_raw_tensor(
             lhs_raw_tensor, rhs_raw_tensor
         ):
-            return lhs_raw_tensor @ rhs_raw_tensor
+            lhs = cp.ascontiguousarray(lhs_raw_tensor)
+            rhs = cp.ascontiguousarray(rhs_raw_tensor)
+            return lhs @ rhs
 
         @staticmethod
         def batch_transpose_raw_tensor(

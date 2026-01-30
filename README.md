@@ -22,3 +22,7 @@ This package exposes a single entry point, `run_qa`, which executes the full wor
 ## How to run benchmarks against MQLib?
 
 First, one need to install an [MQLib](https://github.com/MQLib/MQLib) wrapper awailable [here](https://github.com/LuchnikovI/mqlib_wrap), follow the instruction of README there. Now one can execute scripts in `./benchmarks_against_mqlib`, every script saves a result into a separate directory with time stamp.
+
+## Available backends
+
+Currently there are `numpy` and `cupy` backends. One can specify it in the configuration dictionary. To use `cupy` backend one needs to install `cupy` sepraratelly since it is not in the dependancies list. One can control the precision of the `numpy` backend by setting the environment variable `export BQA_PECISION=single` for the single precision and `export BQA_PRECISION=double` for the double precision. The precision of the `cupy` backend is always single. This is important to trigger fast batched matrix multiplication kernel.
