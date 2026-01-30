@@ -17,6 +17,7 @@ nodes, edges = generate_qubo_on_random_regular_graph(
     edge_ampl_func=lambda _, x: 1.,
 )
 config = {
+    "description" : f"This is a MaxCut problem with {nodes} nodes on a 3-regular graph. Note, that one minimizes the Ising Hamiltonian, so the resulting energy must be shifted to get the cut size.",
     "experiment_name" : "random_3_regular_maxcut",
     "nodes" : nodes,
     "edges" : edges,
@@ -39,7 +40,7 @@ config = {
             "measure",
         ]
     },
-    "runtime_limit" : 10,
+    "runtime_limit" : 10,  # MQLib heuristics runtime limit
     "seed" : 42,
 }
 
