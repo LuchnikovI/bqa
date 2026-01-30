@@ -13,6 +13,7 @@ logging.basicConfig(
 nodes_number = 100000
 nodes, edges = nodes, edges = generate_qubo_on_random_regular_graph(nodes_number)
 config = {
+    "description" : f"This is a QUBO problem with {nodes_number} on a 3-regular graph with couplings and local fields sampled from uniform(-1, 1).",
     "experiment_name" : "random_3_regular_random_fields_random_interactions",
     "nodes" : nodes,
     "edges" : edges,
@@ -27,10 +28,10 @@ config = {
                 "steps_number" : 10000,
                 "final_mixing" : 0.0,
             },
-            "measure",
+            "get_bloch_vectors",  # one uses Bloch vectors to reconstruct solution since measurements sampling is too long
         ]
     },
-    "runtime_limit" : 10,
+    "runtime_limit" : 10,  # MQLib heuristics runtime limit
     "seed" : 42,
 }
 
