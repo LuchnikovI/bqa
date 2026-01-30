@@ -186,7 +186,7 @@ def _analyse_config(config):
                 BACKEND_KEY : _analyse_backend(backend),
             }
         except ConfigSyntaxError as e:
-            raise ConfigSyntaxError(f"Invalid config {config}") from e
+            raise ConfigSyntaxError("Invalid config") from e
     else:
-        raise ConfigSyntaxError(f"Config must be a dict, but got {config} of type {type(config)}")
+        raise ConfigSyntaxError(f"Config must be a dict, but got type {type(config)}")
 
