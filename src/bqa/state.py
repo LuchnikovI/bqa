@@ -96,14 +96,8 @@ def get_density_matrices(context: Context, state: State) -> NDArray:
 
 def _run_bp(context: Context, state: State) -> None:
     log.debug("BP algorithm has started")
-    prev_dist = inf
-    
-    def does_dist_increase(new_dist: float) -> bool:
-        nonlocal prev_dist
-        flag = new_dist > prev_dist
-        prev_dist = new_dist
-        return flag
-
+    best_dist = inf
+    best_msgs = None
     bond_dim = state.bond_dim
     bp_eps = context.bp_eps
     max_bp_iters = context.max_bp_iters_number
@@ -117,15 +111,17 @@ def _run_bp(context: Context, state: State) -> None:
             for ms, poss in zip(new_output_msgs, output_msgs_position):
                 new_msgs.assign_at_batch_indices(ms, poss)
         dist = float(new_msgs.get_dist(state.msgs).numpy)
-        if does_dist_increase(dist):
-            log.warning(f"BP algorithm started to diverge after {iter_num} iteration, dist value is {dist}")
-            return
+        if dist < best_dist:
+            best_msgs = new_msgs
+            best_dist = dist
         log.debug(f"Iteration {iter_num}, distance between subsequent messages {dist}")
         if dist < bp_eps:
             log.debug(f"BP algorithm completed after {iter_num} iterations")
             return
         state.msgs.make_inplace_damping_update(new_msgs, context.damping)
-    log.warning(f"BP algorithm exceeds iterations limit set to {max_bp_iters}")
+    assert best_msgs is not None
+    state.msgs = best_msgs
+    log.warning(f"BP algorithm exceeds iterations limit set to {max_bp_iters}, obtained bp_eps {best_dist}")
 
 
 def _get_extended_msgs(context: Context, ztime: float, state: State) -> Tensor:
