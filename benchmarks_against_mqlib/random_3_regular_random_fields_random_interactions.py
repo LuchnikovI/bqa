@@ -1,6 +1,5 @@
 import logging
 from utils import run_benchmarks
-from bqa.benchmarking import generate_qubo_on_random_regular_graph
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -8,15 +7,13 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 
-# parameters
-
-nodes_number = 100000
-nodes, edges = nodes, edges = generate_qubo_on_random_regular_graph(nodes_number)
 config = {
-    "description" : f"This is a QUBO problem with {nodes_number} on a 3-regular graph with couplings and local fields sampled from uniform(-1, 1).",
+    "description" : "This is a QUBO problem with 100000 on a 3-regular graph with couplings and local fields sampled from uniform(-1, 1).",
     "experiment_name" : "random_3_regular_random_fields_random_interactions",
-    "nodes" : nodes,
-    "edges" : edges,
+    "generator_function_name" : "generate_qubo_on_random_regular_graph",
+    "args" : {
+        "nodes_number" : 100000,  # key can be any, serves as documentation
+    },
     "max_bond_dim" : 4,
     "backend" : "numpy",
     "schedule" : {
