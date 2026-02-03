@@ -15,7 +15,7 @@ config = {
         "nodes_number" : 100000,  # key can be any, serves as documentation
     },
     "max_bond_dim" : 4,
-    "backend" : "numpy",
+    "backend" : "cupy",
     "schedule" : {
         "total_time" : 2000.,
         "starting_mixing" : 1.,

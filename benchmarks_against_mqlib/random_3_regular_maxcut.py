@@ -25,7 +25,7 @@ config = {
     "bp_eps" : 1e-5,
     "pinv_eps" : 1e-5,
     "max_bp_iter_number" : 250,
-    "backend" : "numpy",
+    "backend" : "cupy",
     "schedule" : {
         "total_time" : 200.,
         "starting_mixing" : 1.,
@@ -38,7 +38,7 @@ config = {
             "measure",
         ]
     },
-    "runtime_limit" : 1,  # MQLib heuristics runtime limit
+    "runtime_limit" : 10,  # MQLib heuristics runtime limit
     "seed" : [42, 43, 44, 45, 46, 47, 48, 49, 50, 51],
 }
 
