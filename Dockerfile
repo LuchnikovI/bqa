@@ -1,14 +1,16 @@
 # BQA - Quantum Annealing Simulator
-# Docker image for running examples (installs from Test PyPI)
-# TODO: Change to production PyPI after official release
+# Docker image for running examples
 
 FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install bqa from Test PyPI (with fallback to production PyPI for dependencies)
+# Install pip + awscli (for S3 download inside Batch jobs)
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ bqa
+    pip install --no-cache-dir awscli
+
+# Install bqa from official PyPI
+RUN pip install --no-cache-dir bqa
 
 # Copy examples directory
 COPY examples/ /app/examples/
