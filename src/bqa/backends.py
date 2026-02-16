@@ -860,7 +860,9 @@ try:
         def batch_matmul_raw_tensor(
                 lhs_raw_tensor, rhs_raw_tensor
         ):
-            raise NotImplementedError()
+            lhs = cp.ascontiguousarray(lhs_raw_tensor)
+            rhs = cp.ascontiguousarray(rhs_raw_tensor)
+            return lhs @ rhs
 
         def batch_tensordot(self, other: Tensor, axes: list[list[int]] | int) -> Tensor:
             return self.make_from_raw_tensor(batch_cutensordot(self.raw_tensor, other.raw_tensor, axes))
