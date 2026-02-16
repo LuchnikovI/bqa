@@ -56,6 +56,24 @@ try:
         subscripts = get_einsum_subscripts(lhs_rank, rhs_rank, desug_axes)
         return cp.einsum(subscripts, lhs_tensor, rhs_tensor)
 
+    def batch_cuapply_msgs(tensor, msg, idx: int):
+        assert idx >= 0
+        rank = len(tensor.shape) - 1
+        assert idx < rank
+        assert rank >= 0
+        tensor_subscript = chain("a", map(get_letter, range(rank)))
+        msg_subscript = ("a", get_letter(rank), get_letter(idx))
+        result_subscript = chain("a", (get_letter(rank if a == idx else a) for a in range(rank)))
+        full_subscripts = "".join(chain(
+            tensor_subscript,
+            ",",
+            msg_subscript,
+            "->",
+            result_subscript,
+        ))
+        return cp.einsum(full_subscripts, tensor, idx)
+        
+
 except ImportError:
     def batch_cutensordot(lhs_tensor, rhs_tensor, axes: list[list[int]] | int):
         raise NotImplementedError("CuPy is missing, batch_cutensordot is not implemented")

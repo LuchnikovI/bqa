@@ -4,7 +4,7 @@ from functools import reduce
 from math import cos, prod, sin, sqrt
 from typing import Any, Iterable, Optional, Sequence, TypeVar, Generic, Callable
 
-from bqa.cutensordot import batch_cutensordot
+from bqa.cutensordot import batch_cuapply_msgs, batch_cutensordot
 if sys.version_info >= (3, 11):
     from typing import Self
 else:
@@ -355,22 +355,12 @@ class Tensor(ABC, Generic[RawTensor]):
             ]
             return self._batch_tensordot(other, desug_axes)
 
-    def _move_first_bond_to_last_pos(self) -> Self:
-        batch_rank = self.batch_rank
-        new_indices_order = (0, *range(2, batch_rank), 1)
-        return self.batch_transpose(new_indices_order)
-
     def _apply_msgs_but_one(self, msgs: tuple[Self, ...], but: int) -> Self:
-
-        def apply_msg(tensor: Self, pos_msg: tuple[int, Self]) -> Self:
-            pos, msg = pos_msg
-            return (
-                tensor.batch_tensordot(msg, [[1], [1]])
-                if pos != but
-                else tensor._move_first_bond_to_last_pos()
-            )
-
-        return reduce(apply_msg, enumerate(msgs), self)
+        return reduce(
+            lambda tensor, idx_msg: batch_cuapply_msgs(tensor, idx_msg[1], idx_msg[0] + 1),
+            filter(lambda idx: idx != but, enumerate(msgs)),
+            self,
+        )
 
     def _compute_msg(self, self_conj: Self, msgs: tuple[Self, ...], idx: int, evolution_times: Optional[tuple[Self, ...]]) -> Self:
         tensor_msgs = self._apply_msgs_but_one(msgs, idx)
