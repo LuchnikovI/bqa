@@ -356,8 +356,13 @@ class Tensor(ABC, Generic[RawTensor]):
             return self._batch_tensordot(other, desug_axes)
 
     def _apply_msgs_but_one(self, msgs: tuple[Self, ...], but: int) -> Self:
+
+        def reduction_func(tensor: Self, idx_msg: tuple[int, Self]) -> Self:
+            idx, msg = idx_msg
+            return self.make_from_raw_tensor(batch_cuapply_msgs(tensor.raw_tensor, msg.raw_tensor, idx + 1))
+
         return reduce(
-            lambda tensor, idx_msg: batch_cuapply_msgs(tensor, idx_msg[1], idx_msg[0] + 1),
+            reduction_func,
             filter(lambda idx: idx != but, enumerate(msgs)),
             self,
         )

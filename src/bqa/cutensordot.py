@@ -71,7 +71,7 @@ try:
             "->",
             result_subscript,
         ))
-        return cp.einsum(full_subscripts, tensor, idx)
+        return cp.einsum(full_subscripts, tensor, msg)
         
 
 except ImportError:
