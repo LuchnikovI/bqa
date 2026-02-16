@@ -1,3 +1,6 @@
+import os
+os.environ["CUPY_ACCELERATORS"] = "cutensor"
+
 import logging
 from numpy.typing import NDArray
 from bqa.config.core import config_to_context
