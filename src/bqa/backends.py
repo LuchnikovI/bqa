@@ -856,6 +856,12 @@ try:
         def complex_conj_raw_tensor(raw_tensor):
             return raw_tensor.conj()
 
+        @staticmethod
+        def batch_matmul_raw_tensor(
+                lhs_raw_tensor, rhs_raw_tensor
+        ):
+            raise NotImplementedError()
+
         def batch_tensordot(self, other: Tensor, axes: list[list[int]] | int) -> Tensor:
             return self.make_from_raw_tensor(batch_cutensordot(self.raw_tensor, other.raw_tensor, axes))
 
