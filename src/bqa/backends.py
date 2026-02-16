@@ -3,6 +3,8 @@ import logging
 from functools import reduce
 from math import cos, prod, sin, sqrt
 from typing import Any, Iterable, Optional, Sequence, TypeVar, Generic, Callable
+
+from bqa.cutensordot import batch_cutensordot
 if sys.version_info >= (3, 11):
     from typing import Self
 else:
@@ -11,7 +13,7 @@ from abc import ABC, abstractmethod
 import numpy as np
 from numpy.typing import NDArray
 from numpy.linalg import svd
-from bqa.utils import NP_DTYPE, dispatch_precision
+from bqa.utils import NP_DTYPE
 
 log = logging.getLogger(__name__)
 
@@ -854,13 +856,8 @@ try:
         def complex_conj_raw_tensor(raw_tensor):
             return raw_tensor.conj()
 
-        @staticmethod
-        def batch_matmul_raw_tensor(
-            lhs_raw_tensor, rhs_raw_tensor
-        ):
-            lhs = cp.ascontiguousarray(lhs_raw_tensor)
-            rhs = cp.ascontiguousarray(rhs_raw_tensor)
-            return lhs @ rhs
+        def batch_tensordot(self, other: Tensor, axes: list[list[int]] | int) -> Tensor:
+            return self.make_from_raw_tensor(batch_cutensordot(self.raw_tensor, other.raw_tensor, axes))
 
         @staticmethod
         def batch_transpose_raw_tensor(
