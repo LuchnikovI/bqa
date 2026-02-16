@@ -355,17 +355,22 @@ class Tensor(ABC, Generic[RawTensor]):
             ]
             return self._batch_tensordot(other, desug_axes)
 
+    def _move_first_bond_to_last_pos(self) -> Self:
+        batch_rank = self.batch_rank
+        new_indices_order = (0, *range(2, batch_rank), 1)
+        return self.batch_transpose(new_indices_order)
+
     def _apply_msgs_but_one(self, msgs: tuple[Self, ...], but: int) -> Self:
 
-        def reduction_func(tensor: Self, idx_msg: tuple[int, Self]) -> Self:
-            idx, msg = idx_msg
-            return self.make_from_raw_tensor(batch_cuapply_msgs(tensor.raw_tensor, msg.raw_tensor, idx + 1))
+        def apply_msg(tensor: Self, pos_msg: tuple[int, Self]) -> Self:
+            pos, msg = pos_msg
+            return (
+                tensor.batch_tensordot(msg, [[1], [1]])
+                if pos != but
+                else tensor._move_first_bond_to_last_pos()
+            )
 
-        return reduce(
-            reduction_func,
-            filter(lambda idx: idx != but, enumerate(msgs)),
-            self,
-        )
+        return reduce(apply_msg, enumerate(msgs), self)
 
     def _compute_msg(self, self_conj: Self, msgs: tuple[Self, ...], idx: int, evolution_times: Optional[tuple[Self, ...]]) -> Self:
         tensor_msgs = self._apply_msgs_but_one(msgs, idx)
@@ -861,6 +866,18 @@ try:
 
         def batch_tensordot(self, other: Tensor, axes: list[list[int]] | int) -> Tensor:
             return self.make_from_raw_tensor(batch_cutensordot(self.raw_tensor, other.raw_tensor, axes))
+
+        def _apply_msgs_but_one(self, msgs: tuple[Tensor, ...], but: int) -> Tensor:
+
+            def reduction_func(tensor: Tensor, idx_msg: tuple[int, Tensor]) -> Tensor:
+                idx, msg = idx_msg
+                return self.make_from_raw_tensor(batch_cuapply_msgs(tensor.raw_tensor, msg.raw_tensor, idx + 1))
+
+            return reduce(
+                reduction_func,
+                filter(lambda idx_msg: idx_msg[0] != but, enumerate(msgs)),
+                self,
+            )
 
         @staticmethod
         def batch_transpose_raw_tensor(
