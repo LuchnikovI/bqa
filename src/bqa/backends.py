@@ -784,7 +784,7 @@ try:
 
         @classmethod
         def make_constant(cls, const: float | complex | int) -> Self:
-            return cp.array(const)
+            return cls(cp.array(const))
 
         @classmethod
         def make_from_raw_tensor(cls, raw_tensor) -> Self:
