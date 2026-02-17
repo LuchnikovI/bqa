@@ -63,7 +63,7 @@ def get_contracted_branches(
 
         msgs_tensor = reduce(apply_msg, input_msgs, tensor)
         msg = np.tensordot(tensor.conj(), msgs_tensor, (contraction_indices, contraction_indices))
-        return msg / np.linalg.trace(msg)
+        return msg / np.trace(msg)
 
     return {(src_id, dst_id) : get_msg((src_id, dst_id)) \
             for src_id, ns in enumerate(graph) \
@@ -152,7 +152,7 @@ def get_tree_lmbds(context: Context, tensor: NDArray):
                 shape = splitted_tensor.shape
                 lhs_dim = prod(shape[:lhs_rank])
                 matrix = splitted_tensor.reshape((lhs_dim, -1))
-                lmbd = np.linalg.svdvals(matrix)
+                _, lmbd, _ = np.linalg.svd(matrix)
                 lmbd /= np.linalg.norm(lmbd)
             lmbds[(src_id, dst_id)] = lmbd
     return lmbds

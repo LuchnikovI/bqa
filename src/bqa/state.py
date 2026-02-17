@@ -54,7 +54,7 @@ def _make_initial_degree_to_tensor(context: Context) -> dict[int, Tensor]:
 
 
 def _make_msgs_from_lmbds(lmbds: Tensor, context: Context) -> Tensor:
-    return lmbds.batch_slice(context.msg_pos_to_lmbd_pos).batch_diag().batch_trace_normalize()
+    return lmbds.batch_slice(context.msg_pos_to_lmbd_pos).batched_diag().batch_trace_normalize()
 
 
 def _make_initial_lmbds(context: Context) -> Tensor:
