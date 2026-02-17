@@ -145,7 +145,7 @@ def test_batch_tensordot_axes_list():
 def test_diag_expand():
     x = rand_batch(4, 6)  # shape (4,6)
     t = make(x)
-    out = t.batch_diag().raw_tensor  # expected shape (4,6,6)
+    out = t.batched_diag().raw_tensor  # expected shape (4,6,6)
     assert out.shape == (4, 6, 6)
     for b in range(4):
         assert np.allclose(np.diag(x[b]), out[b])
