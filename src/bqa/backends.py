@@ -877,15 +877,50 @@ try:
 
         def _apply_msgs_but_one(self, msgs: tuple[Tensor, ...], but: int) -> Tensor:
 
-            def reduction_func(tensor: Tensor, idx_msg: tuple[int, Tensor]) -> Tensor:
+            def msgs_reduction_func(tensor: Tensor, idx_msg: tuple[int, Tensor]) -> Tensor:
                 idx, msg = idx_msg
                 return self.make_from_raw_tensor(batch_cuapply_msgs(tensor.raw_tensor, msg.raw_tensor, idx + 1))
 
             return reduce(
-                reduction_func,
+                msgs_reduction_func,
                 filter(lambda idx_msg: idx_msg[0] != but, enumerate(msgs)),
                 self,
             )
+
+        def apply_canonicalizers(self, canonicalizers: tuple[Tensor, ...]) -> Tensor:
+
+            def canonicalizers_reduction_func(tensor: Tensor, idx_cnn: tuple[int, Tensor]) -> Tensor:
+                idx, cnn = idx_cnn
+                return self.make_from_raw_tensor(batch_cuapply_msgs(tensor.raw_tensor, cnn.raw_tensor, idx + 1, is_transpose=True))
+
+            return reduce(
+                canonicalizers_reduction_func,
+                enumerate(canonicalizers),
+                self,
+            )
+
+        def apply_canonicalizers_with_extensions(
+                self,
+                canonicalizers: tuple[Tensor, ...],
+                couplings: tuple[Tensor, ...],
+        ) -> Tensor:
+            assert self.batch_rank - 1 == len(canonicalizers)
+
+            def canonicalizers_reduction_func(tensor: Tensor, idx_cnn_cpl: tuple[int, tuple[Tensor, Tensor]]) -> Tensor:
+                idx, (cnn, cpl) = idx_cnn_cpl
+                extended_tensor = tensor._apply_conditional_z_gate_to_single_axis(idx + 1, cpl)
+                return self.make_from_raw_tensor(batch_cuapply_msgs(extended_tensor.raw_tensor, cnn.raw_tensor, idx + 1, is_transpose=True))
+            
+            def apply_canonicalizer(
+                    tensor: Tensor,
+                    canonicalizer_and_coupling: tuple[Tensor, Tensor],
+            ) -> Tensor:
+                canonicalizer, coupling = canonicalizer_and_coupling
+                return (tensor
+                        ._apply_conditional_z_gate_to_single_axis(1, coupling)
+                        .batch_tensordot(canonicalizer, [[1], [0]]))
+
+            return reduce(apply_canonicalizer, zip(canonicalizers, couplings), self)
 
         @staticmethod
         def transpose_raw(
