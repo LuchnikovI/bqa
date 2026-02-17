@@ -44,11 +44,11 @@ DEFAULT_NODES = {}
 
 DEFAULT_MAX_BOND_DIM = 4
 
-DEFAULT_MAX_BP_ITERS_NUMBER = 100
+DEFAULT_MAX_BP_ITERS_NUMBER = 75
 
-DEFAULT_BP_EPS = 1e-10
+DEFAULT_BP_EPS = 1e-6
 
-DEFAULT_PINV_EPS = 1e-10
+DEFAULT_PINV_EPS = 1e-6
 
 DEFAULT_BACKEND = "numpy"
 
@@ -186,7 +186,7 @@ def _analyse_config(config):
                 BACKEND_KEY : _analyse_backend(backend),
             }
         except ConfigSyntaxError as e:
-            raise ConfigSyntaxError(f"Invalid config {config}") from e
+            raise ConfigSyntaxError("Invalid config") from e
     else:
-        raise ConfigSyntaxError(f"Config must be a dict, but got {config} of type {type(config)}")
+        raise ConfigSyntaxError(f"Config must be a dict, but got type {type(config)}")
 
