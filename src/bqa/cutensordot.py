@@ -1,7 +1,5 @@
 from itertools import chain
 
-from bqa.backends import Tensor
-
 def get_letter(num: int) -> str:
     return chr(ord('a') + num + 1)
 
