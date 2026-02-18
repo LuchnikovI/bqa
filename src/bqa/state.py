@@ -158,11 +158,11 @@ def _apply_x_layer(xtime: float, state: State) -> None:
 
 # TODO: it is not used currently, consider deleting
 def _truncate_vidal_gauge(context: Context, state: State) -> None:
-    bond_dim = context.max_bond_dim
+    truncated_lmbds, bond_dim, err = state.lmbds.truncate_lmbds(context.max_bond_dim, context.pinv_eps)
     truncated_degree_to_tensor = {d : t.batch_truncate_all_but(bond_dim, [0]) for d, t in state.degree_to_tensor.items()}
-    truncated_lmbds = state.lmbds.batch_truncate_all_but(bond_dim)
     state.degree_to_tensor = truncated_degree_to_tensor
     state.lmbds = truncated_lmbds
+    log.info(f"Truncation performed, per edge error upper bound: {err}")
     new_tensor_shapes = {d : t.batch_shape for d, t in state.degree_to_tensor.items()}
     new_lmbds_shapes = state.lmbds.batch_shape
     log.debug(f"Vidal gauge has been truncated, tensor shapes: {new_tensor_shapes}, lmbds shapes: {new_lmbds_shapes}")
@@ -230,10 +230,10 @@ def _set_to_symmetric_gauge(context: Context, state: State) -> None:
 def _simple_update(context: Context, time: float, state: State) -> None:
     msgs = _get_extended_msgs(context, time, state)
     lmbds, canonicalizers = _get_canonicalizers(msgs, context.pinv_eps)
-    bond_dim = context.max_bond_dim
-    trunc_lmbds = lmbds.batch_truncate_all_but(bond_dim)
+    trunc_lmbds, bond_dim, err = lmbds.truncate_lmbds(context.max_bond_dim, context.pinv_eps)
     state.lmbds = trunc_lmbds
     trunc_canonicalizers = canonicalizers.batch_truncate_all_but(bond_dim, [0])
+    log.info(f"Truncation performed, per edge error upper bound: {err}")
     degree_to_tensor = state.degree_to_tensor
     for degree, layout in context.degree_to_layout.items():
         aligned_canonicalizers = tuple(
