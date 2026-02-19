@@ -60,8 +60,8 @@ def test_config_to_context():
     )
     assert context.edges_number == 12
     assert context.nodes_number == 7
-    assert context.max_bp_iters_number == 100
-    assert isclose(context.bp_eps, 1e-10)
+    assert context.max_bp_iters_number == 75
+    assert isclose(context.bp_eps, 1e-6)
     assert isclose(context.damping, 0.3)
     assert context.max_bond_dim == 4
     assert len(context.degree_to_layout) == 3

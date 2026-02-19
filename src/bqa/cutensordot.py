@@ -35,12 +35,15 @@ def get_tensordot_subscripts(lhs_rank: int, rhs_rank: int, axes: list[list[int]]
     return "".join(full_subscripts)
 
 
-def get_apply_msgs_subscript(rank: int, idx: int):
+def get_apply_msgs_subscript(rank: int, idx: int, is_transposed: bool):
     assert idx >= 0
     assert idx < rank
     assert rank >= 0
     tensor_subscript = chain("a", map(get_letter, range(rank)))
-    msg_subscript = ("a", get_letter(rank), get_letter(idx))
+    if is_transposed:
+        msg_subscript = ("a", get_letter(idx), get_letter(rank))
+    else:
+        msg_subscript = ("a", get_letter(rank), get_letter(idx))
     result_subscript = chain("a", (get_letter(rank if a == idx else a) for a in range(rank)))
     full_subscripts = "".join(chain(
         tensor_subscript,
@@ -78,10 +81,9 @@ try:
         return cp.einsum(subscripts, lhs_tensor, rhs_tensor)
 
 
-    def batch_cuapply_msgs(tensor, msg, idx: int):
-        full_subscripts = get_apply_msgs_subscript(len(tensor.shape) - 1, idx)
+    def batch_cuapply_msgs(tensor, msg, idx: int, is_transpose: bool = False):
+        full_subscripts = get_apply_msgs_subscript(len(tensor.shape) - 1, idx, is_transpose)
         return cp.einsum(full_subscripts, tensor, msg)
-        
 
 except ImportError:
 
@@ -92,3 +94,4 @@ except ImportError:
 
     def batch_cuapply_msgs(tensor, msg, idx: int):
         raise NotImplementedError("CuPy is missing, batch_cuapply_msgs is not implemented")
+
