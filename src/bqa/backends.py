@@ -148,7 +148,7 @@ class Tensor(ABC, Generic[RawTensor]):
 
     @staticmethod
     @abstractmethod
-    def max_norm(raw_tensor: RawTensor) -> RawTensor:
+    def max_norm(raw_tensor: RawTensor, is_full: bool) -> RawTensor:
         pass
 
     # map like
@@ -294,6 +294,15 @@ class Tensor(ABC, Generic[RawTensor]):
         dims = (self.batch_size, *batch_dims)
         return self.apply_to_raw_tensor(self.truncate_raw_tensor, dims)
 
+    def truncate_lmbds(self, dim: int, eps: float) -> tuple[Self, int, float]:
+        max_lmbds = self.apply_to_raw_tensor(self.max_norm, False).numpy
+        rank = self.batch_shape[0] - int(np.sum(max_lmbds[::-1] < eps).astype(np.int32))
+        dim = min(rank, dim)
+        new_lmbds = self.batch_truncate_all_but(dim)
+        err = float(np.sqrt(np.sum(max_lmbds[dim:] ** 2)))
+        return new_lmbds, dim, err
+        
+        
     def conj(self) -> Self:
         return self.apply_to_raw_tensor(self.conj_raw)
 
@@ -609,8 +618,11 @@ class NumPyBackend(Tensor):
         return norms
 
     @staticmethod
-    def max_norm(raw_tensor: NDArray) -> NDArray:
-        return np.abs(raw_tensor).max()
+    def max_norm(raw_tensor: NDArray, is_full: bool = True) -> NDArray:
+        if is_full:
+            return np.abs(raw_tensor).max()
+        else:
+            return np.abs(raw_tensor.max(0))
 
     @staticmethod
     def batched_trace(raw_tensor: NDArray) -> NDArray:
@@ -813,8 +825,11 @@ try:
             return norms
 
         @staticmethod
-        def max_norm(raw_tensor):
-            return cp.abs(raw_tensor).max()
+        def max_norm(raw_tensor, is_full: bool = True):
+            if is_full:
+                return cp.abs(raw_tensor).max()
+            else:
+                return cp.abs(raw_tensor).max(0)
 
         @staticmethod
         def batched_trace(raw_tensor):
