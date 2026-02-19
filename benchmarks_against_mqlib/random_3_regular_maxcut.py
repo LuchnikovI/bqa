@@ -2,7 +2,7 @@ import logging
 from utils import run_benchmarks
 
 logging.basicConfig(
-    level=logging.WARNING,
+    level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
@@ -38,7 +38,7 @@ config = {
             "measure",
         ]
     },
-    "runtime_limit" : 10,  # MQLib heuristics runtime limit
+    "runtime_limit" : 100,  # MQLib heuristics runtime limit
     "seed" : [42, 43, 44, 45, 46, 47, 48, 49, 50, 51],
 }
 
