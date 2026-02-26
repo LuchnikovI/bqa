@@ -1,0 +1,38 @@
+# BQA - GPU + QEM Runtime Image
+# Docker image for AWS Batch (EKS/ECS) GPU workloads
+
+FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+WORKDIR /app
+
+# System packages + Python + Rust toolchain requirements
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-pip \
+    python3-venv \
+    ca-certificates \
+    curl \
+    git \
+    build-essential \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Rust (required to build qem)
+RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal && \
+    rustup default stable
+
+# Python runtime dependencies
+RUN python3 -m pip install --no-cache-dir --upgrade pip && \
+    python3 -m pip install --no-cache-dir awscli numpy bqa maturin && \
+    python3 -m pip install --no-cache-dir cupy-cuda12x && \
+    python3 -m pip install --no-cache-dir "git+https://github.com/LuchnikovI/qem.git@8156bfd"
+
+# Copy examples directory
+COPY examples/ /app/examples/
+
+# Default command: run the small IBM heavy hex example with CuPy backend
+CMD ["python3", "examples/small_ibm_heavy_hex.py"]
