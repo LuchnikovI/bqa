@@ -9,7 +9,7 @@ logging.basicConfig(
 
 config = {
     "description" : "This is a QUBO problem with 100,000 on a 3-regular graph with couplings and local fields sampled from uniform(-1, 1).",
-    "experiment_name" : "random_3_regular_random_fields_random_interactions",
+    "experiment_name" : "random_3_regular_qubo_100000",
     "generator_function_name" : "generate_qubo_on_random_regular_graph",
     "args" : {
         "nodes_number" : 100000,  # key can be any, serves as documentation
