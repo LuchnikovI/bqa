@@ -27,7 +27,7 @@ RUN curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal && \
 
 # Python runtime dependencies
 RUN python3 -m pip install --no-cache-dir --upgrade pip && \
-    python3 -m pip install --no-cache-dir awscli numpy bqa maturin && \
+    python3 -m pip install --no-cache-dir awscli numpy typing_extensions bqa maturin && \
     python3 -m pip install --no-cache-dir cupy-cuda12x && \
     python3 -m pip install --no-cache-dir "git+https://github.com/LuchnikovI/qem.git@8156bfd"
 
