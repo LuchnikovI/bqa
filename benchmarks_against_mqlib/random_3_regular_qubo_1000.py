@@ -29,6 +29,7 @@ config = {
         ]
     },
     "runtime_limit" : 10,  # MQLib heuristics runtime limit
+    "hard_runtime_limit" : 10,
     "seed" : [i + 42 for i in range(100)],
 }
 
