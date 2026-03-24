@@ -21,3 +21,6 @@ optional = true
 [tool.poetry.group.test.dependencies]
 pytest = "^8.4.2"
 qem = { git = "https://github.com/LuchnikovI/qem", rev = "8156bfd" }
+
+[tool.poetry.scripts]
+bqa_cli = "src.bqa.cli:cli"
