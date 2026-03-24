@@ -158,3 +158,96 @@ jobs:
           echo "GPU:"
           echo "  ${{ steps.tags.outputs.gpu_sha }}"
           echo "  ${{ steps.tags.outputs.gpu_latest }}"
+
+  # JOB 3: Register new AWS Batch job definition revisions (depends on Job 2)
+  register-job-definitions:
+    needs: build-and-push-docker
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/feature-pipeline-gpu'
+
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Prepare image URIs
+        id: images
+        shell: bash
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          REGISTRY="${{ vars.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
+          echo "cpu=${REGISTRY}/${{ env.ECR_REPOSITORY }}:feature-pipeline-gpu-cpu-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "gpu=${REGISTRY}/${{ env.ECR_REPOSITORY }}:feature-pipeline-gpu-gpu-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Register GPU job definition (EKS)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/gpu-jobdef.json <<'EOF'
+          {
+            "jobDefinitionName": "qag-batch-bqa-gpu",
+            "type": "container",
+            "retryStrategy": { "attempts": 2 },
+            "eksProperties": {
+              "podProperties": {
+                "serviceAccountName": "aws-batch-sa",
+                "containers": [{
+                  "name": "bqa",
+                  "image": "GPU_IMAGE_PLACEHOLDER",
+                  "command": ["sh", "-c", "echo 'Started BQA process'; python3 /app/examples/small_ibm_heavy_hex.py"],
+                  "resources": {
+                    "requests": { "cpu": "1", "memory": "2048Mi", "nvidia.com/gpu": "1" },
+                    "limits":   { "cpu": "1", "memory": "2048Mi", "nvidia.com/gpu": "1" }
+                  }
+                }]
+              }
+            },
+            "propagateTags": false
+          }
+          EOF
+          sed -i 's|GPU_IMAGE_PLACEHOLDER|${{ steps.images.outputs.gpu }}|' /tmp/gpu-jobdef.json
+          RESULT=$(aws batch register-job-definition --region "${{ env.AWS_REGION }}" --cli-input-json file:///tmp/gpu-jobdef.json)
+          echo "✅ GPU job definition registered:"
+          echo "$RESULT" | jq '{jobDefinitionName, jobDefinitionArn, revision}'
+
+      - name: Register CPU job definition (Fargate)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/cpu-jobdef.json <<'EOF'
+          {
+            "jobDefinitionName": "qag-batch-bqa-cpu",
+            "type": "container",
+            "platformCapabilities": ["FARGATE"],
+            "retryStrategy": { "attempts": 2 },
+            "containerProperties": {
+              "image": "CPU_IMAGE_PLACEHOLDER",
+              "command": ["sh", "-c", "echo 'Started BQA process'; python /app/examples/full_size_ibm_heavy_hex.py"],
+              "jobRoleArn": "arn:aws:iam::ACCOUNT_ID_PLACEHOLDER:role/BatchEcsTaskExecutionRole",
+              "executionRoleArn": "arn:aws:iam::ACCOUNT_ID_PLACEHOLDER:role/BatchEcsTaskExecutionRole",
+              "resourceRequirements": [
+                { "value": "1.0", "type": "VCPU" },
+                { "value": "2048", "type": "MEMORY" }
+              ],
+              "networkConfiguration": { "assignPublicIp": "DISABLED" },
+              "fargatePlatformConfiguration": { "platformVersion": "LATEST" },
+              "runtimePlatform": { "operatingSystemFamily": "LINUX", "cpuArchitecture": "X86_64" },
+              "logConfiguration": { "logDriver": "awslogs" },
+              "enableExecuteCommand": true
+            },
+            "propagateTags": false
+          }
+          EOF
+          sed -i 's|CPU_IMAGE_PLACEHOLDER|${{ steps.images.outputs.cpu }}|' /tmp/cpu-jobdef.json
+          sed -i 's|ACCOUNT_ID_PLACEHOLDER|${{ vars.AWS_ACCOUNT_ID }}|g' /tmp/cpu-jobdef.json
+          RESULT=$(aws batch register-job-definition --region "${{ env.AWS_REGION }}" --cli-input-json file:///tmp/cpu-jobdef.json)
+          echo "✅ CPU job definition registered:"
+          echo "$RESULT" | jq '{jobDefinitionName, jobDefinitionArn, revision}'
+
+      - name: Summary
+        run: |
+          echo "📋 Job definitions updated:"
+          echo "  GPU: qag-batch-bqa-gpu → image ${{ steps.images.outputs.gpu }}"
+          echo "  CPU: qag-batch-bqa-cpu → image ${{ steps.images.outputs.cpu }}"
