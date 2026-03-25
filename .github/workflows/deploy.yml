@@ -2,7 +2,7 @@ name: Trigger Deploy
 
 on:
   push:
-    branches: [feature-pipeline-gpu]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
