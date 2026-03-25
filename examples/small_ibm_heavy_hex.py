@@ -71,7 +71,7 @@ config = {
 
     "seed" : 42, # -----------------------> this is the random seed, it is optional, default value is 42
 
-    "backend" : "numpy", # ---------------> this is a backend used for simulation, it is optional, default value is "numpy"
+    "backend" : "cupy", # ---------------> this is a backend used for simulation, it is optional, default value is "numpy"
                          #                  other backends available are ["cupy"]
 
     "schedule" : { # ---------------------> this field specifies the annealing schedule, it is optional, to see default value see the corresponding warning
