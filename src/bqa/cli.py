@@ -22,7 +22,7 @@ def print_help():
                                    stdin is used if not provided
       -o | --output [PATH]         relative to `{CWD}` (current working directory) path to `*.json` where results are saved,
                                    stdout is used if not provided
-      -l | --log-level [LOG_LEVEL] logging level, the argument may take value from {LOG_LEVELS},
+      -l | --log-level [LOG_LEVEL] logging level, the argument may take value from {', '.join(LOG_LEVELS)},
                                    {DEFAULT_LOG_LEVEL} is used if not provided
       -h | --help:                 show this message and exit""")
 
@@ -127,7 +127,6 @@ def _(src: TextIOBase):
 @read_json.register
 def _(src: Path):
     try:
-        print(src)
         with src.open("r") as f:
             return load(f)
     except (JSONDecodeError, PermissionError, IsADirectoryError, UnicodeError, OSError) as e:
