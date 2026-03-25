@@ -8,11 +8,11 @@ logging.basicConfig(
 )
 
 config = {
-    "description" : "This is a MaxCut problem with 1000 nodes on a 3-regular graph. Note, that one minimizes the Ising Hamiltonian, so the resulting energy must be shifted to get the cut size.",
-    "experiment_name" : "random_3_regular_maxcut",
+    "description" : "This is a MaxCut problem with 10000 nodes on a 3-regular graph. Note, that one minimizes the Ising Hamiltonian, so the resulting energy must be shifted to get the cut size.",
+    "experiment_name" : "random_3_regular_maxcut_10000",
     "generator_function_name" : "generate_qubo_on_random_regular_graph",
     "args" : {
-        "nodes_number" : 1000,  # key can be any, serves as documentation
+        "nodes_number" : 10000,  # key can be any, serves as documentation
         "degree" : 3,
     },
     "kwargs" : {
@@ -39,7 +39,8 @@ config = {
         ]
     },
     "runtime_limit" : 100,  # MQLib heuristics runtime limit
-    "seed" : [42, 43, 44, 45, 46, 47, 48, 49, 50, 51],
+    "hard_runtime_limit" : 100,
+    "seed" : 42,
 }
 
 run_benchmarks(config)

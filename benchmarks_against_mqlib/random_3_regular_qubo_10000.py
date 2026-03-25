@@ -8,11 +8,11 @@ logging.basicConfig(
 )
 
 config = {
-    "description" : "This is a QUBO problem with 100,000 on a 3-regular graph with couplings and local fields sampled from uniform(-1, 1).",
-    "experiment_name" : "random_3_regular_random_fields_random_interactions",
+    "description" : "This is a QUBO problem with 10,000 on a 3-regular graph with couplings and local fields sampled from uniform(-1, 1).",
+    "experiment_name" : "random_3_regular_qubo_10000",
     "generator_function_name" : "generate_qubo_on_random_regular_graph",
     "args" : {
-        "nodes_number" : 100000,  # key can be any, serves as documentation
+        "nodes_number" : 10000,  # key can be any, serves as documentation
     },
     "max_bond_dim" : 4,
     "backend" : "cupy",
@@ -29,7 +29,8 @@ config = {
         ]
     },
     "runtime_limit" : 100,  # MQLib heuristics runtime limit
-    "seed" : 42,
+    "hard_runtime_limit" : 100,
+    "seed" : [i + 42 for i in range(10)]
 }
 
 run_benchmarks(config)

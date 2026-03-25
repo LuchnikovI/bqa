@@ -1,5 +1,6 @@
 import datetime
 import json
+from math import inf
 from statistics import mean, stdev
 from pathlib import Path
 from mqlib_wrap import run_heuristics, get_energy_function
@@ -96,7 +97,7 @@ def _run_benchmarks(config_slice):
     bptn_configuration = extract_argmin_from_last_record(bptn_result)
     bptn_energy = energy_function(bptn_configuration)
     all_results = [(name, result) for name, result in mqlib_results.items()]
-    all_results.sort(key = lambda pair: pair[1]["energy"])
+    all_results.sort(key = lambda pair: pair[1]["energy"] or inf)
     config_and_results = {
         "config" : replace_nodes_and_edges_with_statistics(config_slice),
         "bptn_result" : {"energy" : bptn_energy, "configuration" : bptn_configuration},

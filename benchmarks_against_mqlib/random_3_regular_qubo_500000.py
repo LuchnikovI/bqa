@@ -1,0 +1,37 @@
+import logging
+from utils import run_benchmarks
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+
+config = {
+    "description" : "This is a QUBO problem with 500,000 on a 3-regular graph with couplings and local fields sampled from uniform(-1, 1).",
+    "experiment_name" : "random_3_regular_qubo_500000",
+    "generator_function_name" : "generate_qubo_on_random_regular_graph",
+    "args" : {
+        "nodes_number" : 500000,  # key can be any, serves as documentation
+    },
+    "max_bond_dim" : 4,
+    "backend" : "cupy",
+    "schedule" : {
+        "total_time" : 2000.,
+        "starting_mixing" : 1.,
+        "actions" : [
+            {
+                "weight" : 1.,
+                "steps_number" : 10000,
+                "final_mixing" : 0.0,
+            },
+            "get_bloch_vectors",  # one uses Bloch vectors to reconstruct solution since measurements sampling is too expensive
+        ]
+    },
+    "runtime_limit" : 100,  # MQLib heuristics runtime limit
+    "hard_runtime_limit" : 100,
+    "seed" : 42,
+}
+
+run_benchmarks(config)
+
