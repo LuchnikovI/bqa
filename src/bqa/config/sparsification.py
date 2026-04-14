@@ -1,7 +1,6 @@
 import logging
 from heapq import heapify, heappop, heappush
 from bqa.config.schedule_syntax import GET_BLOCH_VECTORS
-from bqa.core import ALL_RESULT_KEYS, BLOCH_VECTORS_KEY
 from .config_syntax import (
     DEFAULT_NODES, EDGES_KEY, NODES_KEY, DEFAULT_FIELD_KEY, DEFAULT_DEFAULT_FIELD,
     ConfigSyntaxError, _get_or_default_and_warn, _get_or_raise, _analyse_edge_id,
@@ -14,6 +13,10 @@ SPARSIFICATION_KEY = "sparsification"
 CLUSTER_COUPLING_KEY = "cluster_coupling"
 
 MAXIMAL_DEGREE_KEY = "maximal_degree"
+
+BLOCH_VECTORS_KEY = "bloch_vectors"
+
+MEASUREMENT_OUTCOMES_KEY = "measurement_outcomes"
 
 DEFAULT_COUPLING_AMPLITUDE = 1.0
 
@@ -264,7 +267,7 @@ def collapse_clusters(solution, node_to_childs, original_size):
     return collapsed_solution
 
 
-def postprocessing(result, info):
+def postprocess(result, info):
     if info is None:
         return result
     size = info["size"]
@@ -272,7 +275,9 @@ def postprocessing(result, info):
     for record in result:
         if record[0] == BLOCH_VECTORS_KEY:
             raise ValueError(f"{GET_BLOCH_VECTORS} is forbidden when graph sparsification is used")
-        if record[0] in ALL_RESULT_KEYS:
+        if record[0] == MEASUREMENT_OUTCOMES_KEY:
             record[1] = collapse_clusters(record[1], node_to_childs, size)
+        else:
+            assert False
     return result
 

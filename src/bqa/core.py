@@ -1,5 +1,7 @@
+
 import os
 from bqa.config.schedule_syntax import GET_BLOCH_VECTORS, MEASURE
+from bqa.config.sparsification import BLOCH_VECTORS_KEY, MEASUREMENT_OUTCOMES_KEY, postprocess, preprocess
 
 os.environ["CUPY_ACCELERATORS"] = "cutensor"
 
@@ -11,13 +13,7 @@ from bqa.utils import convert_density_matrix_to_bloch_vector
 
 log = logging.getLogger(__name__)
 
-BLOCH_VECTORS_KEY = "bloch_vectors"
-
-MEASUREMENT_OUTCOMES_KEY = "measurement_outcomes"
-
-ALL_RESULT_KEYS = {BLOCH_VECTORS_KEY, MEASUREMENT_OUTCOMES_KEY}
-
-def run_qa(config) -> list:
+def _run_qa(config) -> list:
     context = config_to_context(config)
     instructions_number = len(context.instructions)
     state = _initialize_state(context)
@@ -40,4 +36,9 @@ def run_qa(config) -> list:
             raise ValueError(f"Unknown instruction {instruction}")
     instr_exec_iter = (execute_instruction(instr_num, instr) for instr_num, instr in enumerate(context.instructions))
     return list(filter(lambda x: x is not None, instr_exec_iter))
+
+def run_qa(config) -> list:
+    sparse_config, info = preprocess(config)
+    result = _run_qa(sparse_config)
+    return postprocess(result, info)
 
