@@ -1,5 +1,7 @@
 import logging
 from heapq import heapify, heappop, heappush
+from bqa.config.schedule_syntax import GET_BLOCH_VECTORS
+from bqa.core import ALL_RESULT_KEYS, BLOCH_VECTORS_KEY
 from .config_syntax import (
     DEFAULT_NODES, EDGES_KEY, NODES_KEY, DEFAULT_FIELD_KEY, DEFAULT_DEFAULT_FIELD,
     ConfigSyntaxError, _get_or_default_and_warn, _get_or_raise, _analyse_edge_id,
@@ -9,7 +11,7 @@ log = logging.getLogger(__name__)
 
 SPARSIFICATION_KEY = "sparsification"
 
-COUPLING_AMPLITUDE_KEY = "separation_coupling"
+CLUSTER_COUPLING_KEY = "cluster_coupling"
 
 MAXIMAL_DEGREE_KEY = "maximal_degree"
 
@@ -207,7 +209,7 @@ def preprocess(
             ampl = _analyse_number(
                 _get_or_default_and_warn(
                     sparsification,
-                    COUPLING_AMPLITUDE_KEY,
+                    CLUSTER_COUPLING_KEY,
                     DEFAULT_COUPLING_AMPLITUDE,
                     "config",
                 )
@@ -237,6 +239,7 @@ def preprocess(
             )
             node_to_childs = problem.sparsify_problem(max_degree, ampl)
             sparse_config = problem.release()
+            log.info(f"Graph sparsification with {CLUSTER_COUPLING_KEY}={ampl} and {MAXIMAL_DEGREE_KEY}={max_degree} has been performed")
             return config | sparse_config, node_to_childs
         else:
             raise ConfigSyntaxError(f"`{SPARSIFICATION_KEY}` must be a dict, but got type {type(sparsification)}")
@@ -267,9 +270,9 @@ def postprocessing(result, info):
     size = info["size"]
     node_to_childs = info["node_to_childs"]
     for record in result:
-        if record[0] == "bloch_vectors":
-            raise ValueError("`get_bloch_vector` is forbidden when graph sparcification is used")
-        if record[0] in ("measurement_outcomes",):
+        if record[0] == BLOCH_VECTORS_KEY:
+            raise ValueError(f"{GET_BLOCH_VECTORS} is forbidden when graph sparsification is used")
+        if record[0] in ALL_RESULT_KEYS:
             record[1] = collapse_clusters(record[1], node_to_childs, size)
     return result
 

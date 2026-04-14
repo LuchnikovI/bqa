@@ -1,4 +1,6 @@
 import os
+from bqa.config.schedule_syntax import GET_BLOCH_VECTORS, MEASURE
+
 os.environ["CUPY_ACCELERATORS"] = "cutensor"
 
 import logging
@@ -9,6 +11,11 @@ from bqa.utils import convert_density_matrix_to_bloch_vector
 
 log = logging.getLogger(__name__)
 
+BLOCH_VECTORS_KEY = "bloch_vectors"
+
+MEASUREMENT_OUTCOMES_KEY = "measurement_outcomes"
+
+ALL_RESULT_KEYS = {BLOCH_VECTORS_KEY, MEASUREMENT_OUTCOMES_KEY}
 
 def run_qa(config) -> list:
     context = config_to_context(config)
@@ -22,11 +29,11 @@ def run_qa(config) -> list:
         log.info(f"Instruction number {instruction_number} / {instructions_number} started")
         if isinstance(instruction, dict):
             return run_layer(context, instruction["xtime"], instruction["ztime"], state)
-        elif instruction == "measure":
-            return ["measurement_outcomes", measure(context, state)]
-        elif instruction == "get_bloch_vectors":
+        elif instruction == MEASURE:
+            return [MEASUREMENT_OUTCOMES_KEY, measure(context, state)]
+        elif instruction == GET_BLOCH_VECTORS:
             return [
-                "bloch_vectors",
+                BLOCH_VECTORS_KEY,
                 list(map(convert_density_matrix_to_bloch_vector, get_density_matrices(context, state))),
             ]
         else:
