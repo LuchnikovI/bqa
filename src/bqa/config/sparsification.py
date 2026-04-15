@@ -113,7 +113,11 @@ class Problem:
             raise ConfigSyntaxError("Invalid problem specification") from e
 
     def get_field(self, node_id):
-        return self.nodes.get(node_id, self.default_field) if node_id < self.graph_size else None
+        if node_id > self.graph_size:
+            assert False
+        field = self.nodes.get(node_id, self.default_field)
+        assert field is not None
+        return field
 
     def get_degree(self, node_id):
         assert self.graph_size > node_id
@@ -151,15 +155,19 @@ class Problem:
         coupling = self.remove_edge(i, old_j)
         self.add_edge(i, new_j, coupling)
 
-    def split_neighbors(self, node_id, max_degree):
+    def get_sorted_couplings_and_ids(self, node_id):
         neighs = self.graph[node_id]
-        total_degree = len(neighs)
+        couplings_and_ids = [(abs(self.edges[canonicalize_edge_id((neigh_id, node_id))]), neigh_id) for neigh_id in neighs]
+        couplings_and_ids.sort(key = lambda x: x[0], reverse=True)
+        return couplings_and_ids
+
+    def split_neighbors(self, node_id, max_degree):
+        total_degree = self.get_degree(node_id)
         bins = make_bins_alignment(max_degree, total_degree)
         bins_number = len(bins)
-        coupling_and_id = [(abs(self.edges[canonicalize_edge_id((neigh_id, node_id))]), neigh_id) for neigh_id in neighs]
-        coupling_and_id.sort(key = lambda x: x[0], reverse=True)
+        couplings_and_ids = self.get_sorted_couplings_and_ids(node_id)
         cluster = [[] for _ in range(bins_number)]
-        for coupling, neigh_id in coupling_and_id:
+        for coupling, neigh_id in couplings_and_ids:
             while True:
                 assert bins
                 load, neg_cap, bin_id = heappop(bins)
@@ -168,8 +176,8 @@ class Problem:
             cluster[bin_id].append(neigh_id)
             heappush(bins, [load + coupling, neg_cap + 1, bin_id])
         bins.sort(key = lambda x: x[2])
-        total_load = sum(map(lambda x: x[0], coupling_and_id))
-        return cluster, total_load
+        cluster_coupling = sum(map(lambda x: x[0], couplings_and_ids)) + abs(self.get_field(node_id))
+        return cluster, cluster_coupling
 
     def sparsify_problem(self, max_degree, ampl):
         info = {"size": self.graph_size, "node_to_childs" : {}}
@@ -177,12 +185,8 @@ class Problem:
         for node_id in range(self.graph_size):
             if self.get_degree(node_id) > max_degree:
                 last_chain_node_id = node_id
-                cluster, total_load = self.split_neighbors(node_id, max_degree)
-                cluster_size = len(cluster)
-                field = self.get_field(node_id)
-                assert field is not None
-                cluster_coupling = total_load + abs(field)
-                new_field = field / cluster_size
+                cluster, cluster_coupling = self.split_neighbors(node_id, max_degree)
+                new_field = self.get_field(node_id) / len(cluster)
                 self.nodes[node_id] = new_field
                 node_to_childs[node_id] = []
                 for neighs in cluster[1:]:
@@ -240,9 +244,11 @@ def preprocess(
                 nodes,
                 default_field,
             )
+            old_nodes_number = problem.graph_size
             node_to_childs = problem.sparsify_problem(max_degree, ampl)
+            new_nodes_number = problem.graph_size
             sparse_config = problem.release()
-            log.info(f"Graph sparsification with {CLUSTER_COUPLING_KEY}={ampl} and {MAXIMAL_DEGREE_KEY}={max_degree} has been performed")
+            log.info(f"Graph sparsification with {CLUSTER_COUPLING_KEY}: {ampl} and {MAXIMAL_DEGREE_KEY}: {max_degree} has been performed, number of nodes changed from {old_nodes_number} to {new_nodes_number}")
             return config | sparse_config, node_to_childs
         else:
             raise ConfigSyntaxError(f"`{SPARSIFICATION_KEY}` must be a dict, but got type {type(sparsification)}")
@@ -261,7 +267,7 @@ def collapse_clusters(solution, node_to_childs, original_size):
             else:
                 votes[value] = 1
         if len(votes) > 1:
-            log.warning(f"Conflicting values encountered when collapsing replicated nodes {[par, *chlds]}, resolved via majority vote.")
+            log.warning(f"Conflicting values encountered when collapsing replicated nodes {[par, *chlds]}, resolved via majority vote from {votes}.")
         result, _ = max(votes.items(), key = lambda x: x[1])
         collapsed_solution[par] = result
     return collapsed_solution
