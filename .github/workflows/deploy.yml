@@ -1,12 +1,57 @@
-name: Trigger Deploy
+name: Release & Deploy
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
-  dispatch:
+  release:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      created: ${{ steps.tag.outputs.created }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version from pyproject.toml
+        id: version
+        run: |
+          VERSION=$(grep '^version' pyproject.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "📦 Version: ${VERSION}"
+
+      - name: Create tag and GitHub Release if missing
+        id: tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAG="v${VERSION}"
+
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "🏷️ Tag ${TAG} already exists — skipping"
+            echo "created=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "🏷️ Creating tag ${TAG}"
+            git tag "$TAG"
+            git push origin "$TAG"
+
+            echo "📝 Creating GitHub Release ${TAG}"
+            gh release create "$TAG" \
+              --title "BQA ${VERSION}" \
+              --generate-notes
+            echo "created=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  deploy:
+    needs: release
     runs-on: ubuntu-latest
     steps:
       - name: Trigger bqa-deploy pipeline
@@ -15,4 +60,4 @@ jobs:
           token: ${{ secrets.BQA_DEPLOY_PAT }}
           repository: Quantum-Algorithms-Group/bqa-deploy
           event-type: bqa-release
-          client-payload: '{"ref": "${{ github.ref }}", "sha": "${{ github.sha }}"}'
+          client-payload: '{"ref": "${{ github.ref }}", "sha": "${{ github.sha }}", "version": "${{ needs.release.outputs.version }}"}'
