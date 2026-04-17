@@ -4,7 +4,7 @@ from bqa.config.schedule_syntax import GET_BLOCH_VECTORS
 from .config_syntax import (
     DEFAULT_NODES, EDGES_KEY, NODES_KEY, DEFAULT_FIELD_KEY, DEFAULT_DEFAULT_FIELD,
     ConfigSyntaxError, _get_or_default_and_warn, _get_or_raise, _analyse_edge_id,
-    _analyse_number, _analyse_non_neg_int)
+    _analyse_number, _analyse_non_neg_int, _analyse_non_neg_number, _analyse_0_to_1_number)
 
 log = logging.getLogger(__name__)
 
@@ -14,6 +14,8 @@ CLUSTER_COUPLING_KEY = "cluster_coupling"
 
 MAXIMAL_DEGREE_KEY = "maximal_degree"
 
+EPS_KEY = "eps"
+
 BLOCH_VECTORS_KEY = "bloch_vectors"
 
 MEASUREMENT_OUTCOMES_KEY = "measurement_outcomes"
@@ -21,6 +23,8 @@ MEASUREMENT_OUTCOMES_KEY = "measurement_outcomes"
 DEFAULT_COUPLING_AMPLITUDE = 1.0
 
 DEFAULT_MAXIMAL_DEGREE = 3
+
+DEFAULT_EPS = 0.0
 
 def _analyse_maximal_degree(maximal_degree):
     if isinstance(maximal_degree, int) and maximal_degree >= 3:
@@ -113,7 +117,7 @@ class Problem:
             raise ConfigSyntaxError("Invalid problem specification") from e
 
     def get_field(self, node_id):
-        if node_id > self.graph_size:
+        if node_id >= self.graph_size:
             assert False
         field = self.nodes.get(node_id, self.default_field)
         assert field is not None
@@ -179,9 +183,31 @@ class Problem:
         cluster_coupling = sum(map(lambda x: x[0], couplings_and_ids)) + abs(self.get_field(node_id))
         return cluster, cluster_coupling
 
-    def sparsify_problem(self, max_degree, ampl):
+    def sparsify(self, eps):
+        total_weight = sum(abs(coupling) for _, coupling in self.edges.items())
+        drop_weight = eps * total_weight
+        drop_weight_clone = drop_weight
+        queue = []
+        seen = set()
+        number_of_removed_edges = 0
+        for edge_id, coupling in self.edges.items():
+            edge_id = canonicalize_edge_id(edge_id)
+            if edge_id not in seen:
+                heappush(queue, (abs(coupling), -self.get_degree(edge_id[0]), edge_id))
+                seen.add(edge_id)
+        while queue:
+            coupling, _, edge_id = heappop(queue)
+            if drop_weight - coupling < 0:
+                break
+            drop_weight -= coupling
+            self.remove_edge(*edge_id)
+            number_of_removed_edges += 1
+        log.info(f"{number_of_removed_edges} edges has been removed, total relative accuracy drop {(drop_weight_clone - drop_weight) / total_weight} < {eps}")
+
+    def compile_to_low_degree(self, max_degree, ampl):
         info = {"size": self.graph_size, "node_to_childs" : {}}
         node_to_childs = info["node_to_childs"]
+        old_nodes_number = self.graph_size
         for node_id in range(self.graph_size):
             if self.get_degree(node_id) > max_degree:
                 last_chain_node_id = node_id
@@ -196,6 +222,8 @@ class Problem:
                         self.move_edge(neigh_id, node_id, new_node_id)
                     self.add_edge(last_chain_node_id, new_node_id, -ampl * cluster_coupling)
                     last_chain_node_id = new_node_id
+        new_nodes_number = self.graph_size
+        log.info(f"Graph sparsification with {CLUSTER_COUPLING_KEY}: {ampl} and {MAXIMAL_DEGREE_KEY}: {max_degree} has been performed, number of nodes changed from {old_nodes_number} to {new_nodes_number}")
         return info
 
     def release(self):
@@ -213,12 +241,20 @@ def preprocess(
         if sparsification is None:
             return config, None
         if isinstance(sparsification, dict):
-            ampl = _analyse_number(
+            ampl = _analyse_non_neg_number(
                 _get_or_default_and_warn(
                     sparsification,
                     CLUSTER_COUPLING_KEY,
                     DEFAULT_COUPLING_AMPLITUDE,
                     "config",
+                )
+            )
+            eps = _analyse_0_to_1_number(
+                _get_or_default_and_warn(
+                    sparsification,
+                    EPS_KEY,
+                    DEFAULT_EPS,
+                    SPARSIFICATION_KEY,
                 )
             )
             max_degree = _analyse_maximal_degree(
@@ -229,6 +265,7 @@ def preprocess(
                     SPARSIFICATION_KEY,
                 )
             )
+            
             nodes = _get_or_default_and_warn(config, NODES_KEY, DEFAULT_NODES, "config")
             edges = _get_or_raise(config, EDGES_KEY, "config")
             default_field = _analyse_number(
@@ -244,11 +281,9 @@ def preprocess(
                 nodes,
                 default_field,
             )
-            old_nodes_number = problem.graph_size
-            node_to_childs = problem.sparsify_problem(max_degree, ampl)
-            new_nodes_number = problem.graph_size
+            problem.sparsify(eps)
+            node_to_childs = problem.compile_to_low_degree(max_degree, ampl)
             sparse_config = problem.release()
-            log.info(f"Graph sparsification with {CLUSTER_COUPLING_KEY}: {ampl} and {MAXIMAL_DEGREE_KEY}: {max_degree} has been performed, number of nodes changed from {old_nodes_number} to {new_nodes_number}")
             return config | sparse_config, node_to_childs
         else:
             raise ConfigSyntaxError(f"`{SPARSIFICATION_KEY}` must be a dict, but got type {type(sparsification)}")

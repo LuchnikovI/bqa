@@ -79,7 +79,6 @@ def _analyse_number(value):
     )
     return float(number)
 
-
 def vectorized_append(lists, elems):
     for lst, elem in zip(lists, elems):
         lst.append(elem)
