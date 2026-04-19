@@ -1,10 +1,13 @@
 import logging
+from copy import copy
 from heapq import heapify, heappop, heappush
 from bqa.config.schedule_syntax import GET_BLOCH_VECTORS
-from .config_syntax import (
-    DEFAULT_NODES, EDGES_KEY, NODES_KEY, DEFAULT_FIELD_KEY, DEFAULT_DEFAULT_FIELD,
-    ConfigSyntaxError, _get_or_default_and_warn, _get_or_raise, _analyse_edge_id,
-    _analyse_number, _analyse_non_neg_int, _analyse_non_neg_number, _analyse_0_to_1_number)
+from .utils import (
+    ConfigSyntaxError, _get_or_default_and_warn, _get_or_raise,
+    _analyse_number, _analyse_non_neg_int, _analyse_number_greater_1,
+    _analyse_0_to_1_number)
+from .config_syntax import (DEFAULT_NODES, EDGES_KEY, NODES_KEY, DEFAULT_FIELD_KEY,
+                            DEFAULT_DEFAULT_FIELD, _analyse_edge_id)
 
 log = logging.getLogger(__name__)
 
@@ -12,26 +15,17 @@ SPARSIFICATION_KEY = "sparsification"
 
 CLUSTER_COUPLING_KEY = "cluster_coupling"
 
-MAXIMAL_DEGREE_KEY = "maximal_degree"
-
 EPS_KEY = "eps"
 
 BLOCH_VECTORS_KEY = "bloch_vectors"
 
 MEASUREMENT_OUTCOMES_KEY = "measurement_outcomes"
 
-DEFAULT_COUPLING_AMPLITUDE = 1.0
+DEFAULT_COUPLING_AMPLITUDE = 1.1
 
 DEFAULT_MAXIMAL_DEGREE = 3
 
 DEFAULT_EPS = 0.0
-
-def _analyse_maximal_degree(maximal_degree):
-    if isinstance(maximal_degree, int) and maximal_degree >= 3:
-        return maximal_degree
-    else:
-        raise ConfigSyntaxError(f"Invalid maximal degree {maximal_degree}, must be an `int` value >= 3")
-
 
 def get_iter(pairs, name):
     if isinstance(pairs, (list, tuple)):
@@ -83,21 +77,22 @@ def gen_validated_nodes(nodes):
         else:
             raise ConfigSyntaxError(f"Node must be a list or tuple with two elements, but recieved {node}")
 
+def _node_to_tree(couplings_and_neighs, ampl):
+    assert len(couplings_and_neighs) > 3
+    queue = [[c * ampl, i] for c, i in couplings_and_neighs]
+    heapify(queue)
+    while True:
+        lhs = heappop(queue)
+        rhs = heappop(queue)
+        if not queue:
+            max_tree, min_tree = (lhs, rhs) if lhs[0] > rhs[0] else (rhs, lhs)
+            if len(max_tree) == 2:
+                return [None, max_tree, min_tree]
+            else:
+                _, lhs, rhs = max_tree
+                return [None, lhs, rhs, min_tree]
+        heappush(queue, [lhs[0] + rhs[0], lhs, rhs])
 
-def make_bins_alignment(max_degree, total_degree):
-    assert total_degree > max_degree
-    out_degree = max_degree - 1
-    in_degree = max_degree - 2
-    bins = [[0, -out_degree, 0]]
-    ptr = out_degree
-    bin_id = 1
-    while total_degree - ptr > out_degree:
-        bins.append([0, -in_degree, bin_id])
-        ptr += in_degree
-        bin_id += 1
-    bins.append([0, ptr - total_degree, bin_id])
-    heapify(bins)
-    return bins
 
 class Problem:
     def __init__(self, edges, nodes, default_field):
@@ -150,6 +145,10 @@ class Problem:
         self.graph[j].remove(i)
         return coupling
 
+    def disconnect_node(self, node_id):
+        for neigh_id in copy(self.graph[node_id]):
+            self.remove_edge(node_id, neigh_id)
+
     def move_edge(self, i, old_j, new_j):
         assert i != old_j
         assert i != new_j
@@ -159,29 +158,11 @@ class Problem:
         coupling = self.remove_edge(i, old_j)
         self.add_edge(i, new_j, coupling)
 
-    def get_sorted_couplings_and_ids(self, node_id):
-        neighs = self.graph[node_id]
-        couplings_and_ids = [(abs(self.edges[canonicalize_edge_id((neigh_id, node_id))]), neigh_id) for neigh_id in neighs]
-        couplings_and_ids.sort(key = lambda x: x[0], reverse=True)
-        return couplings_and_ids
-
-    def split_neighbors(self, node_id, max_degree):
-        total_degree = self.get_degree(node_id)
-        bins = make_bins_alignment(max_degree, total_degree)
-        bins_number = len(bins)
-        couplings_and_ids = self.get_sorted_couplings_and_ids(node_id)
-        cluster = [[] for _ in range(bins_number)]
-        for coupling, neigh_id in couplings_and_ids:
-            while True:
-                assert bins
-                load, neg_cap, bin_id = heappop(bins)
-                if neg_cap < 0:
-                    break
-            cluster[bin_id].append(neigh_id)
-            heappush(bins, [load + coupling, neg_cap + 1, bin_id])
-        bins.sort(key = lambda x: x[2])
-        cluster_coupling = sum(map(lambda x: x[0], couplings_and_ids)) + abs(self.get_field(node_id))
-        return cluster, cluster_coupling
+    def get_couplings_and_ids(self, node_id):
+        for neigh_id in self.graph[node_id]:
+            edge_id = canonicalize_edge_id((node_id, neigh_id))
+            coupling = self.edges[edge_id]
+            yield coupling, neigh_id
 
     def sparsify(self, eps):
         total_weight = sum(abs(coupling) for _, coupling in self.edges.items())
@@ -204,26 +185,33 @@ class Problem:
             number_of_removed_edges += 1
         log.info(f"{number_of_removed_edges} edges has been removed, total relative accuracy drop {(drop_weight_clone - drop_weight) / total_weight} < {eps}")
 
-    def compile_to_low_degree(self, max_degree, ampl):
+    def compile_to_degree_three(self, ampl):
         info = {"size": self.graph_size, "node_to_childs" : {}}
         node_to_childs = info["node_to_childs"]
         old_nodes_number = self.graph_size
         for node_id in range(self.graph_size):
-            if self.get_degree(node_id) > max_degree:
-                last_chain_node_id = node_id
-                cluster, cluster_coupling = self.split_neighbors(node_id, max_degree)
-                new_field = self.get_field(node_id) / len(cluster)
-                self.nodes[node_id] = new_field
+            if self.get_degree(node_id) > 3:
+                couplings_and_ids = {i : c for c, i in self.get_couplings_and_ids(node_id)}
+                tree = _node_to_tree([(abs(c), i) for c, i in self.get_couplings_and_ids(node_id)], ampl)
+                self.disconnect_node(node_id)
+                stack = [(node_id, tree)]
                 node_to_childs[node_id] = []
-                for neighs in cluster[1:]:
-                    new_node_id = self.add_node(new_field)
-                    node_to_childs[node_id].append(new_node_id)
-                    for neigh_id in neighs:
-                        self.move_edge(neigh_id, node_id, new_node_id)
-                    self.add_edge(last_chain_node_id, new_node_id, -ampl * cluster_coupling)
-                    last_chain_node_id = new_node_id
+                while stack:
+                    par_node_id, (_, *sub_trees) = stack[-1]
+                    stack.pop()
+                    for sub_tree in sub_trees:
+                        if len(sub_tree) == 2:
+                            _, ch_node_id = sub_tree
+                            coupling = couplings_and_ids[ch_node_id]
+                            self.add_edge(ch_node_id, par_node_id, coupling)
+                        else:
+                            ch_node_id = self.add_node(0.)
+                            node_to_childs[node_id].append(ch_node_id)
+                            coupling, *_ = sub_tree
+                            stack.append((ch_node_id, sub_tree))
+                            self.add_edge(ch_node_id, par_node_id, -coupling)
         new_nodes_number = self.graph_size
-        log.info(f"Graph sparsification with {CLUSTER_COUPLING_KEY}: {ampl} and {MAXIMAL_DEGREE_KEY}: {max_degree} has been performed, number of nodes changed from {old_nodes_number} to {new_nodes_number}")
+        log.info(f"Graph has been compiled to minimal possible degree, initial nodes number {old_nodes_number}, new nodes number {new_nodes_number}")
         return info
 
     def release(self):
@@ -241,7 +229,7 @@ def preprocess(
         if sparsification is None:
             return config, None
         if isinstance(sparsification, dict):
-            ampl = _analyse_non_neg_number(
+            ampl = _analyse_number_greater_1(
                 _get_or_default_and_warn(
                     sparsification,
                     CLUSTER_COUPLING_KEY,
@@ -257,15 +245,7 @@ def preprocess(
                     SPARSIFICATION_KEY,
                 )
             )
-            max_degree = _analyse_maximal_degree(
-                _get_or_default_and_warn(
-                    sparsification,
-                    MAXIMAL_DEGREE_KEY,
-                    DEFAULT_MAXIMAL_DEGREE,
-                    SPARSIFICATION_KEY,
-                )
-            )
-            
+
             nodes = _get_or_default_and_warn(config, NODES_KEY, DEFAULT_NODES, "config")
             edges = _get_or_raise(config, EDGES_KEY, "config")
             default_field = _analyse_number(
@@ -282,7 +262,7 @@ def preprocess(
                 default_field,
             )
             problem.sparsify(eps)
-            node_to_childs = problem.compile_to_low_degree(max_degree, ampl)
+            node_to_childs = problem.compile_to_degree_three(ampl)
             sparse_config = problem.release()
             return config | sparse_config, node_to_childs
         else:
