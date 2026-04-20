@@ -1,5 +1,6 @@
 import logging
 from copy import copy
+from dataclasses import dataclass
 from heapq import heapify, heappop, heappush
 from bqa.config.schedule_syntax import GET_BLOCH_VECTORS
 from .utils import (
@@ -13,7 +14,7 @@ log = logging.getLogger(__name__)
 
 SPARSIFICATION_KEY = "sparsification"
 
-CLUSTER_COUPLING_KEY = "cluster_coupling"
+CLUSTER_COUPLING_AMPLITUDE_KEY = "cluster_coupling_amplitude"
 
 EPS_KEY = "eps"
 
@@ -21,7 +22,7 @@ BLOCH_VECTORS_KEY = "bloch_vectors"
 
 MEASUREMENT_OUTCOMES_KEY = "measurement_outcomes"
 
-DEFAULT_COUPLING_AMPLITUDE = 1.1
+DEFAULT_CLUSTER_COUPLING_AMPLITUDE = 1.1
 
 DEFAULT_MAXIMAL_DEGREE = 3
 
@@ -77,21 +78,40 @@ def gen_validated_nodes(nodes):
         else:
             raise ConfigSyntaxError(f"Node must be a list or tuple with two elements, but recieved {node}")
 
+
+@dataclass(frozen=True)
+class Node:
+    is_leaf: bool
+    coupling: float
+    content: list["Node"] | int
+
+    def __lt__(self, other):
+        assert isinstance(other, Node)
+        assert self.coupling is not None
+        assert other.coupling is not None
+        if self.coupling != other.coupling:
+            return other.coupling < self.coupling  # couplings are negative, larger couplings come first
+        elif self.is_leaf != other.is_leaf:
+            return self.is_leaf
+        else:
+            return id(self) < id(other)
+
+
 def _node_to_tree(couplings_and_neighs, ampl):
-    assert len(couplings_and_neighs) > 3
-    queue = [[c * ampl, i] for c, i in couplings_and_neighs]
+    queue = [Node(True, -ampl * abs(c), i) for c, i in couplings_and_neighs]
+    assert len(queue) > 3
     heapify(queue)
     while True:
         lhs = heappop(queue)
         rhs = heappop(queue)
         if not queue:
-            max_tree, min_tree = (lhs, rhs) if lhs[0] > rhs[0] else (rhs, lhs)
-            if len(max_tree) == 2:
-                return [None, max_tree, min_tree]
+            max_tree, min_tree = (lhs, rhs) if lhs > rhs else (rhs, lhs)
+            if max_tree.is_leaf:
+                return Node(False, 0., [max_tree, min_tree])
             else:
-                _, lhs, rhs = max_tree
-                return [None, lhs, rhs, min_tree]
-        heappush(queue, [lhs[0] + rhs[0], lhs, rhs])
+                assert not isinstance(max_tree.content, int)
+                return Node(False, 0., [min_tree, *(max_tree.content)])
+        heappush(queue, Node(False, lhs.coupling + rhs.coupling, [lhs, rhs]))
 
 
 class Problem:
@@ -192,24 +212,27 @@ class Problem:
         for node_id in range(self.graph_size):
             if self.get_degree(node_id) > 3:
                 couplings_and_ids = {i : c for c, i in self.get_couplings_and_ids(node_id)}
-                tree = _node_to_tree([(abs(c), i) for c, i in self.get_couplings_and_ids(node_id)], ampl)
+                tree = _node_to_tree(self.get_couplings_and_ids(node_id), ampl)
                 self.disconnect_node(node_id)
                 stack = [(node_id, tree)]
                 node_to_childs[node_id] = []
                 while stack:
-                    par_node_id, (_, *sub_trees) = stack[-1]
+                    par_node_id, node = stack[-1]
                     stack.pop()
-                    for sub_tree in sub_trees:
-                        if len(sub_tree) == 2:
-                            _, ch_node_id = sub_tree
+                    assert not isinstance(node.content, int)
+                    for sub_tree in node.content:
+                        if sub_tree.is_leaf:
+                            ch_node_id = sub_tree.content
+                            assert isinstance(ch_node_id, int)
                             coupling = couplings_and_ids[ch_node_id]
                             self.add_edge(ch_node_id, par_node_id, coupling)
                         else:
                             ch_node_id = self.add_node(0.)
                             node_to_childs[node_id].append(ch_node_id)
-                            coupling, *_ = sub_tree
+                            coupling = sub_tree.coupling
+                            assert coupling <= 0
                             stack.append((ch_node_id, sub_tree))
-                            self.add_edge(ch_node_id, par_node_id, -coupling)
+                            self.add_edge(ch_node_id, par_node_id, coupling)
         new_nodes_number = self.graph_size
         log.info(f"Graph has been compiled to minimal possible degree, initial nodes number {old_nodes_number}, new nodes number {new_nodes_number}")
         return info
@@ -232,8 +255,8 @@ def preprocess(
             ampl = _analyse_number_greater_1(
                 _get_or_default_and_warn(
                     sparsification,
-                    CLUSTER_COUPLING_KEY,
-                    DEFAULT_COUPLING_AMPLITUDE,
+                    CLUSTER_COUPLING_AMPLITUDE_KEY,
+                    DEFAULT_CLUSTER_COUPLING_AMPLITUDE,
                     "config",
                 )
             )
@@ -245,7 +268,6 @@ def preprocess(
                     SPARSIFICATION_KEY,
                 )
             )
-
             nodes = _get_or_default_and_warn(config, NODES_KEY, DEFAULT_NODES, "config")
             edges = _get_or_raise(config, EDGES_KEY, "config")
             default_field = _analyse_number(
@@ -283,8 +305,8 @@ def collapse_clusters(solution, node_to_childs, original_size):
                 votes[value] = 1
         if len(votes) > 1:
             log.warning(f"Conflicting values encountered when collapsing replicated nodes {[par, *chlds]}, resolved via majority vote from {votes}.")
-        result, _ = max(votes.items(), key = lambda x: x[1])
-        collapsed_solution[par] = result
+            result, _ = max(votes.items(), key = lambda x: x[1])
+            collapsed_solution[par] = result
     return collapsed_solution
 
 
