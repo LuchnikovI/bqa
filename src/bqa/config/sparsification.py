@@ -197,7 +197,11 @@ class Problem:
                 heappush(queue, (abs(coupling), -self.get_degree(edge_id[0]), edge_id))
                 seen.add(edge_id)
         while queue:
-            coupling, _, edge_id = heappop(queue)
+            coupling, neg_degree, edge_id = heappop(queue)
+            real_degree = min(self.get_degree(edge_id[0]), self.get_degree(edge_id[1]))
+            if real_degree != -neg_degree:
+                heappush(queue, (coupling, -real_degree, edge_id))
+                continue
             if drop_weight - coupling < 0:
                 break
             drop_weight -= coupling
