@@ -41,6 +41,15 @@ def _analyse_non_neg_number(value):
     return float(number)
 
 
+def _analyse_number_greater_1(value):
+    number = _analyse_atomic_value(
+        lambda x: isinstance(x, (float, int)) and x >= 1.0,
+        value,
+        "must be a `float` or `int` number > 1",
+    )
+    return float(number)
+
+
 def _analyse_0_to_1_number(value):
     number = _analyse_atomic_value(
         lambda x: isinstance(x, (float, int)) and x >= 0.0 and x <= 1.0,
@@ -78,7 +87,6 @@ def _analyse_number(value):
         "must be a `float` or `int` number",
     )
     return float(number)
-
 
 def vectorized_append(lists, elems):
     for lst, elem in zip(lists, elems):
