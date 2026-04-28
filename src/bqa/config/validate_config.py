@@ -1,7 +1,10 @@
-from math import isclose
+import logging
+from math import isclose, isfinite
 from bqa.backends import BACKEND_STR_TO_BACKEND
 from bqa.config.schedule_syntax import DEFAULT_WEIGHT
-from bqa.config.utils import ConfigSyntaxError
+
+class ConfigSyntaxError(ValueError):
+    pass
 
 # keys
 
@@ -35,8 +38,6 @@ INITIAL_MIXING_KEY = "initial_mixing"
 
 STARTING_MIXING_KEY = "starting_mixing"
 
-TYPE_KEY = "type"
-
 TOTAL_TIME_KEY = "total_time"
 
 ACTIONS_KEY = "actions"
@@ -59,12 +60,16 @@ MEASURE = "measure"
 
 SIMPLE_ACTION_TYPES = {MEASURE, GET_BLOCH_VECTORS}
 
+log = logging.getLogger(__name__)
+
 def validate_if_present(data, key, validator_fn):
     if key in data:
         try:
             validator_fn(data[key])
         except ConfigSyntaxError as e:
             raise ConfigSyntaxError(f"Key `{key}` contains invalid value") from e
+    else:
+        log.warning(f"Parameter `{key}` is not set, will be a default value")
 
 
 def validate_all_records(config, key_and_validator):
@@ -79,7 +84,9 @@ def validate_int(value):
 
 def validate_number(value):
     if not isinstance(value, (int, float)):
-        raise ConfigSyntaxError(f"Must be either integer of a float, but received value of type `{type(value)}`")
+        raise ConfigSyntaxError(f"Must be either integer or a float, but received value of type `{type(value)}`")
+    if isinstance(value, float) and not isfinite(value):
+        raise ConfigSyntaxError(f"Invalid float {value}")
 
 
 def validate_non_neg(value):
@@ -165,10 +172,10 @@ def validate_edges(edges):
             lhs_id, rhs_id = edge_id
         except ConfigSyntaxError as e:
             raise ConfigSyntaxError(f"Invalid edge number {num}") from e
-        if (lhs_id, rhs_id) in seen_edges:
-            raise ConfigSyntaxError(f"An attempt to rewrite the coupling value from {seen_edges[(lhs_id, rhs_id)]} to {cpl} for edge ID {(lhs_id, rhs_id)}")
-        if (rhs_id, lhs_id) in seen_edges:
-            raise ConfigSyntaxError(f"An attempt to rewrite the coupling value from {seen_edges[(rhs_id, lhs_id)]} to {cpl} for edge ID {(rhs_id, lhs_id)}")
+        if (lhs_id, rhs_id) in seen_edges and seen_edges[(lhs_id, rhs_id)] != cpl:
+            raise ConfigSyntaxError(f"An attempt to rewrite the coupling value from {seen_edges[(lhs_id, rhs_id)]} to {cpl} for edge number {num} with ID {(lhs_id, rhs_id)}")
+        if (rhs_id, lhs_id) in seen_edges and seen_edges[(rhs_id, lhs_id)] != cpl:
+            raise ConfigSyntaxError(f"An attempt to rewrite the coupling value from {seen_edges[(rhs_id, lhs_id)]} to {cpl} for edge number {num} with ID {(rhs_id, lhs_id)}")
         seen_edges[(lhs_id, rhs_id)] = cpl
 
 
@@ -198,8 +205,9 @@ def validate_backend(backend):
 def validate_actions(actions):
     validate_sequence(actions)
     for action in actions:
-        if isinstance(action, str) and action not in SIMPLE_ACTION_TYPES:
-            raise ConfigSyntaxError(f"Unknown action keyword `{action}` must be from {SIMPLE_ACTION_TYPES}")
+        if isinstance(action, str):
+            if action not in SIMPLE_ACTION_TYPES:
+                raise ConfigSyntaxError(f"Unknown action keyword `{action}` must be from {SIMPLE_ACTION_TYPES}")
         elif isinstance(action, dict):
             try:
                 validate_if_present(action, STEPS_NUMBER_KEY, validate_positive_int)
@@ -209,7 +217,7 @@ def validate_actions(actions):
             except ConfigSyntaxError as e:
                 raise ConfigSyntaxError("Invalid action") from e
         else:
-            raise ConfigSyntaxError(f"Unknown action type `{type(action)}` must be a dict of a string from {SIMPLE_ACTION_TYPES}")
+            raise ConfigSyntaxError(f"Unknown action type `{type(action)}` must be a dict or a string from {SIMPLE_ACTION_TYPES}")
     qa_actions = [action for action in actions if isinstance(action, dict)]
     if qa_actions:
         total_weight = sum(action.get(WEIGHT_KEY, DEFAULT_WEIGHT) for action in qa_actions)
@@ -226,35 +234,45 @@ def validate_schedule(sch):
 
 
 def validate_sparsification(sp):
+    if sp is None:
+        return
     if not isinstance(sp, dict):
         raise ConfigSyntaxError(f"Must be a dictionary, but received a value of type {type(sp)}")
     validate_if_present(sp, EPS_KEY, validate_0_to_1_number)
     validate_if_present(sp, CLUSTER_COUPLING_AMPLITUDE_KEY, validate_number_1_to_inf)
 
 
+def validate_sparsification_actions_consistency(config):
+    if config.get(SPARSIFICATION_KEY) is not None \
+       and SCHEDULE_KEY in config \
+       and ACTIONS_KEY in config[SCHEDULE_KEY] \
+       and any(action == GET_BLOCH_VECTORS for action in config[SCHEDULE_KEY][ACTIONS_KEY]):
+        raise ConfigSyntaxError(f"Cannot use `{GET_BLOCH_VECTORS}` action if `{SPARSIFICATION_KEY}` is enabled")
+
+
 def validate_config(config):
-    if EDGES_KEY not in config:
-        raise ConfigSyntaxError(f"Invalid config: `{EDGES_KEY}` is not presents")
-    if isinstance(config, dict):
-        validate_edges(config[EDGES_KEY])
-        validate_all_records(
-            config,
-            [
-                [NODES_KEY, validate_nodes],
-                [DEFAULT_FIELD_KEY, validate_number],
-                [SCHEDULE_KEY, validate_schedule],
-                [MAX_BOND_DIM_KEY, validate_positive_int],
-                [MAX_BP_ITER_NUMBER_KEY, validate_non_neg_int],
-                [SEED_KEY, validate_non_neg_int],
-                [BP_EPS_KEY, validate_0_to_1_number],
-                [PINV_EPS_KEY, validate_0_to_1_number],
-                [MEASUREMENT_THRESHOLD_KEY, validate_0_to_1_number],
-                [DAMPING_KEY, validate_0_to_1_number],
-                [BACKEND_KEY, validate_backend],
-                [SPARSIFICATION_KEY, validate_sparsification]
-            ],
-        )
-        return config
-    else:
+    if not isinstance(config, dict):
         raise ConfigSyntaxError(f"Config must be a dictionary, but `{type(config)}` is received")
+    if EDGES_KEY not in config:
+        raise ConfigSyntaxError(f"Invalid config: `{EDGES_KEY}` is not present")
+    validate_edges(config[EDGES_KEY])
+    validate_all_records(
+        config,
+        [
+            [NODES_KEY, validate_nodes],
+            [DEFAULT_FIELD_KEY, validate_number],
+            [SCHEDULE_KEY, validate_schedule],
+            [MAX_BOND_DIM_KEY, validate_positive_int],
+            [MAX_BP_ITER_NUMBER_KEY, validate_non_neg_int],
+            [SEED_KEY, validate_non_neg_int],
+            [BP_EPS_KEY, validate_0_to_1_number],
+            [PINV_EPS_KEY, validate_0_to_1_number],
+            [MEASUREMENT_THRESHOLD_KEY, validate_half_to_1_number],
+            [DAMPING_KEY, validate_0_to_1_number],
+            [BACKEND_KEY, validate_backend],
+            [SPARSIFICATION_KEY, validate_sparsification]
+        ],
+    )
+    validate_sparsification_actions_consistency(config)
+    return config
 

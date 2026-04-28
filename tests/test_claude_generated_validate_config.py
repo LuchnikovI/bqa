@@ -6,7 +6,6 @@ Run with:
     pytest test_validate_config.py -v --hypothesis-seed=0   # for reproducibility
 """
 
-from math import nan
 import pytest
 from bqa.backends import BACKEND_STR_TO_BACKEND
 from hypothesis import given, assume, settings, HealthCheck
@@ -122,7 +121,7 @@ def valid_actions_with_weights(draw):
         actions.append(action)
 
     # Optionally prepend some string actions
-    extras = draw(st.lists(st.sampled_from(["measure", "get_bloch_vectors"]), max_size=2))
+    extras = draw(st.lists(st.sampled_from(["measure"]), max_size=2))
     return extras + actions
 
 
