@@ -1,7 +1,6 @@
 import logging
 from math import isclose, isfinite
 from bqa.backends import BACKEND_STR_TO_BACKEND
-from bqa.config.schedule_syntax import DEFAULT_WEIGHT
 
 class ConfigSyntaxError(ValueError):
     pass
@@ -51,6 +50,8 @@ SPARSIFICATION_KEY = "sparsification"
 CLUSTER_COUPLING_AMPLITUDE_KEY = "cluster_coupling_amplitude"
 
 EPS_KEY = "eps"
+
+POSTPROCESSING_KEY = "postprocessing"
 
 # action types
 
@@ -172,10 +173,10 @@ def validate_edges(edges):
             lhs_id, rhs_id = edge_id
         except ConfigSyntaxError as e:
             raise ConfigSyntaxError(f"Invalid edge number {num}") from e
-        if (lhs_id, rhs_id) in seen_edges and seen_edges[(lhs_id, rhs_id)] != cpl:
-            raise ConfigSyntaxError(f"An attempt to rewrite the coupling value from {seen_edges[(lhs_id, rhs_id)]} to {cpl} for edge number {num} with ID {(lhs_id, rhs_id)}")
-        if (rhs_id, lhs_id) in seen_edges and seen_edges[(rhs_id, lhs_id)] != cpl:
-            raise ConfigSyntaxError(f"An attempt to rewrite the coupling value from {seen_edges[(rhs_id, lhs_id)]} to {cpl} for edge number {num} with ID {(rhs_id, lhs_id)}")
+        if (lhs_id, rhs_id) in seen_edges:
+            raise ConfigSyntaxError(f"Repeated edge ID: {(lhs_id, rhs_id)}")
+        if (rhs_id, lhs_id) in seen_edges:
+            raise ConfigSyntaxError(f"Repeated edge ID: {(rhs_id, lhs_id)}")
         seen_edges[(lhs_id, rhs_id)] = cpl
 
 
@@ -190,8 +191,8 @@ def validate_nodes(nodes):
             validate_number(field)
         except ConfigSyntaxError as e:
             raise ConfigSyntaxError(f"Invalid node number {num}") from e
-        if node_id in seen_nodes and seen_nodes[node_id] != field:
-            raise ConfigSyntaxError(f"An attempt to rewrite the field value from {seen_nodes[node_id]} to {field} at node number {node_id}")
+        if node_id in seen_nodes:
+            raise ConfigSyntaxError(f"Repeated node ID: {node_id}")
         seen_nodes[node_id] = field
 
 
@@ -204,23 +205,25 @@ def validate_backend(backend):
 
 def validate_actions(actions):
     validate_sequence(actions)
-    for action in actions:
-        if isinstance(action, str):
-            if action not in SIMPLE_ACTION_TYPES:
-                raise ConfigSyntaxError(f"Unknown action keyword `{action}` must be from {SIMPLE_ACTION_TYPES}")
-        elif isinstance(action, dict):
-            try:
+    for num, action in enumerate(actions):
+        try:
+            if isinstance(action, str):
+                if action not in SIMPLE_ACTION_TYPES:
+                    raise ConfigSyntaxError(f"Unknown action keyword `{action}` must be from {SIMPLE_ACTION_TYPES}")
+            elif isinstance(action, dict):
                 validate_if_present(action, STEPS_NUMBER_KEY, validate_positive_int)
-                validate_if_present(action, WEIGHT_KEY, validate_0_to_1_number)
+                if WEIGHT_KEY not in action:
+                    raise ConfigSyntaxError(f"Missing `{WEIGHT_KEY}` key")
+                validate_0_to_1_number(action[WEIGHT_KEY])
                 validate_if_present(action, INITIAL_MIXING_KEY, validate_0_to_1_number)
                 validate_if_present(action, FINAL_MIXING_KEY, validate_0_to_1_number)
-            except ConfigSyntaxError as e:
-                raise ConfigSyntaxError("Invalid action") from e
-        else:
-            raise ConfigSyntaxError(f"Unknown action type `{type(action)}` must be a dict or a string from {SIMPLE_ACTION_TYPES}")
+            else:
+                raise ConfigSyntaxError(f"Unknown action type `{type(action)}` must be a dict or a string from {SIMPLE_ACTION_TYPES}")
+        except ConfigSyntaxError as e:
+            raise ConfigSyntaxError(f"Invalid action number {num}") from e
     qa_actions = [action for action in actions if isinstance(action, dict)]
     if qa_actions:
-        total_weight = sum(action.get(WEIGHT_KEY, DEFAULT_WEIGHT) for action in qa_actions)
+        total_weight = sum(action[WEIGHT_KEY] for action in qa_actions)
         if not isclose(total_weight, 1.):
             raise ConfigSyntaxError(f"Total weight aggregated among all the actions must be close to 1.0, but actual total weight is {total_weight}")
 
