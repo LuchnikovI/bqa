@@ -1,11 +1,15 @@
 import logging
-from bqa.config.config_canonicalization import Context, _canonicalize_config
-from bqa.config.config_syntax import _analyse_config
+
+from bqa.config.compile_config import Context, compile_config
+from bqa.config.desugar_config import desugar_config
+from bqa.config.sparsify_config import sparsify_config
+from bqa.config.validate_config import validate_config
 
 log = logging.getLogger(__name__)
 
 
 def config_to_context(config) -> Context:
-    context = _canonicalize_config(_analyse_config(config))
+    context =  config | validate_config | desugar_config | sparsify_config | compile_config
     log.info("Context is built")
     return context
+

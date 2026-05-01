@@ -1,7 +1,7 @@
 import numpy as np
 from numpy.typing import NDArray
 from numpy.random import uniform
-from bqa.config.config_canonicalization import Context
+from bqa.config.compile_config import Context
 from bqa.config.core import config_to_context
 from bqa.utils import convert_density_matrix_to_bloch_vector
 

@@ -5,7 +5,7 @@ from operator import sub
 import numpy as np
 from bqa.backends import NumPyBackend
 from bqa.config.core import config_to_context
-from bqa.config.config_canonicalization import Layout
+from bqa.config.compile_config import Layout
 
 logging.basicConfig(
     level=logging.ERROR,
@@ -51,14 +51,14 @@ def test_config_to_context():
                 "actions": [
                     {"weight": 0.4, "final_mixing": 0.3, "steps_number": 8},
                     "measure",
-                    {"type": "imag_time_evolution", "weight": 0.6, "final_mixing": 0.11, "steps_number": 10},
+                    {"weight": 0.6, "final_mixing": 0.11, "steps_number": 10},
                     "get_bloch_vectors",
                 ],
             },
             "damping" : 0.3,
         },
     )
-    assert context.edges_number == 12
+    assert context.msgs_number == 12
     assert context.nodes_number == 7
     assert context.max_bp_iters_number == 75
     assert isclose(context.bp_eps, 1e-6)
@@ -76,34 +76,34 @@ def test_config_to_context():
     assert context.degree_to_layout[2] == Layout(
         NumPyBackend(np.array([2, 3, 4], dtype=np.intp)),
         [
-            NumPyBackend(np.array([9, 8, 3], dtype=np.intp)),
-            NumPyBackend(np.array([0, 11, 4], dtype=np.intp)),
+            NumPyBackend(np.array([0, 2, 3], dtype=np.intp)),
+            NumPyBackend(np.array([9, 5, 4], dtype=np.intp)),
         ],
         [
-            NumPyBackend(np.array([3, 2, 9], dtype=np.intp)),
-            NumPyBackend(np.array([6, 5, 10], dtype=np.intp)),
+            NumPyBackend(np.array([6, 8, 9], dtype=np.intp)),
+            NumPyBackend(np.array([3, 11, 10], dtype=np.intp)),
         ],
         [
-            NumPyBackend(np.array([3, 2, 3], dtype=np.intp)),
-            NumPyBackend(np.array([0, 5, 4], dtype=np.intp)),
+            NumPyBackend(np.array([0, 2, 3], dtype=np.intp)),
+            NumPyBackend(np.array([3, 5, 4], dtype=np.intp)),
         ],
         NumPyBackend(np.array([1., -0.5, -0.5])),
         [
-            NumPyBackend(np.array([1.1, 0.1, 1.1])),
-            NumPyBackend(np.array([1., 1., 0.])),
+            NumPyBackend(np.array([1., 0.1, 1.1])),
+            NumPyBackend(np.array([1.1, 1., 0.])),
         ]
     )
     assert context.degree_to_layout[3] == Layout(
         NumPyBackend(np.array([0, 1], dtype=np.intp)),
         [
-            NumPyBackend(np.array([6, 7], dtype=np.intp)),
-            NumPyBackend(np.array([1, 10], dtype=np.intp)),
-            NumPyBackend(np.array([2, 5], dtype=np.intp)),
+            NumPyBackend(np.array([6, 1], dtype=np.intp)),
+            NumPyBackend(np.array([7, 10], dtype=np.intp)),
+            NumPyBackend(np.array([8, 11], dtype=np.intp)),
         ],
         [
-            NumPyBackend(np.array([0, 1], dtype=np.intp)),
-            NumPyBackend(np.array([7, 4], dtype=np.intp)),
-            NumPyBackend(np.array([8, 11], dtype=np.intp)),
+            NumPyBackend(np.array([0, 7], dtype=np.intp)),
+            NumPyBackend(np.array([1, 4], dtype=np.intp)),
+            NumPyBackend(np.array([2, 5], dtype=np.intp)),
         ],
         [
             NumPyBackend(np.array([0, 1], dtype=np.intp)),
@@ -146,17 +146,17 @@ def test_config_to_context():
     )
     first_part_mixings = mixings[:8]
     second_part_mixings = mixings[8:]
-    assert isclose(first_part_mixings[0], 0.8)
-    assert isclose(second_part_mixings[0], 0.3)
+    assert isclose(first_part_mixings[-1], 0.3)
+    assert isclose(second_part_mixings[-1], 0.11)
     first_part_diffs = list(
         map(
             sub,
-            chain(first_part_mixings[1:], [second_part_mixings[0]]),
+            chain([0.8], first_part_mixings[:-1]),
             first_part_mixings,
         )
     )
     second_part_diffs = list(
-        map(sub, chain(second_part_mixings[1:], [0.11]), second_part_mixings)
+        map(sub, chain([0.3], second_part_mixings[:-1]), second_part_mixings)
     )
     assert all(map(lambda x: isclose(x, first_part_diffs[0]), first_part_diffs))
     assert all(map(lambda x: isclose(x, second_part_diffs[0]), second_part_diffs))

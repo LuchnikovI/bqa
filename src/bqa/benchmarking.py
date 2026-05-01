@@ -2,7 +2,7 @@ import logging
 from random import Random
 from typing import Any, Callable
 
-from networkx import Graph, nx_agraph
+from networkx import Graph
 
 try:
     from networkx import random_regular_graph, grid_2d_graph, convert_node_labels_to_integers

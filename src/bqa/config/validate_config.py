@@ -1,6 +1,7 @@
 import logging
 from math import isclose, isfinite
 from bqa.backends import BACKEND_STR_TO_BACKEND
+from bqa.config.pipeline import pipeline
 
 class ConfigSyntaxError(ValueError):
     pass
@@ -252,7 +253,7 @@ def validate_sparsification_actions_consistency(config):
        and any(action == GET_BLOCH_VECTORS for action in config[SCHEDULE_KEY][ACTIONS_KEY]):
         raise ConfigSyntaxError(f"Cannot use `{GET_BLOCH_VECTORS}` action if `{SPARSIFICATION_KEY}` is enabled")
 
-
+@pipeline
 def validate_config(config):
     if not isinstance(config, dict):
         raise ConfigSyntaxError(f"Config must be a dictionary, but `{type(config)}` is received")

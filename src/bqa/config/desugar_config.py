@@ -27,6 +27,7 @@ from bqa.config.validate_config import (
     TOTAL_TIME_KEY,
     WEIGHT_KEY,
 )
+from bqa.config.pipeline import pipeline
 
 # defaults
 
@@ -71,6 +72,7 @@ DEFAULT_EPS = 0.0
 DEFAULT_EVOLUTION = {
     WEIGHT_KEY : DEFAULT_WEIGHT,
     STEPS_NUMBER_KEY : DEFAULT_STEPS_NUMBER,
+    INITIAL_MIXING_KEY : DEFAULT_STARTING_MIXING,
     FINAL_MIXING_KEY : DEFAULT_FINAL_MIXING,
 }
 
@@ -126,9 +128,13 @@ def desug_sparsification(sparsification):
 
 
 def desug_edges(edges):
-    return {canonicalize_edge_id(edge_id) : cpl \
+    return {canonicalize_edge_id(edge_id) : float(cpl) \
             for edge_id, cpl \
             in (edges.items() if isinstance(edges, dict) else edges)}
+
+
+def desug_nodes(nodes):
+    return {node_id : float(ampl) for node_id, ampl in (nodes.items() if isinstance(nodes, dict) else nodes)}
 
 
 def desug_actions_seq(actions, starting_mixing):
@@ -160,9 +166,10 @@ def desug_schedule(schedule):
     }
 
 
+@pipeline
 def desugar_config(config):
     return {
-        NODES_KEY : desug_or_warn_and_set_default_if_not_present(config, NODES_KEY, DEFAULT_NODES, dict),
+        NODES_KEY : desug_or_warn_and_set_default_if_not_present(config, NODES_KEY, DEFAULT_NODES, desug_nodes),
         EDGES_KEY : desug_edges(config[EDGES_KEY]),
         MAX_BOND_DIM_KEY : desug_or_warn_and_set_default_if_not_present(config, MAX_BOND_DIM_KEY, DEFAULT_MAX_BOND_DIM),
         MAX_BP_ITER_NUMBER_KEY : desug_or_warn_and_set_default_if_not_present(config, MAX_BP_ITER_NUMBER_KEY, DEFAULT_MAX_BP_ITERS_NUMBER),

@@ -3,9 +3,15 @@ from copy import copy
 from dataclasses import dataclass
 from heapq import heapify, heappop, heappush
 from bqa.config.desugar_config import canonicalize_edge_id
-from bqa.config.validate_config import CLUSTER_COUPLING_AMPLITUDE_KEY, DEFAULT_FIELD_KEY, EDGES_KEY, NODES_KEY, POSTPROCESSING_KEY, SPARSIFICATION_KEY, EPS_KEY
+from bqa.config.validate_config import (CLUSTER_COUPLING_AMPLITUDE_KEY, DEFAULT_FIELD_KEY, EDGES_KEY, NODES_KEY, POSTPROCESSING_KEY,
+                                        SPARSIFICATION_KEY, EPS_KEY)
+from bqa.config.pipeline import pipeline
 
 log = logging.getLogger(__name__)
+
+BLOCH_VECTORS_KEY = "bloch_vectors"
+
+MEASUREMENT_OUTCOMES_KEY = "measurement_outcomes"
 
 @dataclass(frozen=True)
 class Node:
@@ -48,8 +54,8 @@ class DynGraph:
         self.nodes = copy(nodes)
         self.edges = copy(edges)
         self.graph_size = max(
-            max(*self.nodes.keys()),
-            max(*(max(i, j) for i, j in self.edges.keys()))
+            max(self.nodes.keys(), default = -1),
+            max((max(i, j) for i, j in self.edges.keys()), default = -1)
         ) + 1
         self.graph = [set() for _ in range(self.graph_size)]
         for i, j in self.edges.keys():
@@ -167,6 +173,7 @@ class DynGraph:
         return self.nodes, self.edges
 
 
+@pipeline
 def sparsify_config(config):
     sparsification = config[SPARSIFICATION_KEY]
     if sparsification is None:
@@ -187,4 +194,33 @@ def sparsify_config(config):
         **{k : v for k, v in config.items() if k != NODES_KEY and k != EDGES_KEY},
     }
     return new_config
-    
+
+
+def collapse_clusters(solution, node_to_childs, original_size):
+    collapsed_solution = solution[:original_size]
+    for par, chlds in node_to_childs.items():
+        votes = {solution[par]: 1}
+        for chld in chlds:
+            value = solution[chld]
+            if value in votes:
+                votes[value] += 1
+            else:
+                votes[value] = 1
+        if len(votes) > 1:
+            log.warning(f"Conflicting values encountered when collapsing replicated nodes {[par, *chlds]}, resolved via majority vote from {votes}.")
+            result, _ = max(votes.items(), key = lambda x: x[1])
+            collapsed_solution[par] = result
+    return collapsed_solution
+
+
+def postprocess(result, info):
+    if info is None:
+        return result
+    size = info["graph_size"]
+    node_to_aux_nodes = info["node_to_aux_nodes"]
+    for record in result:
+        if record[0] == MEASUREMENT_OUTCOMES_KEY:
+            record[1] = collapse_clusters(record[1], node_to_aux_nodes, size)
+        else:
+            assert False
+    return result
