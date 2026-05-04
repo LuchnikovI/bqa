@@ -1,176 +1,166 @@
-#!/usr/bin/env python3
-
-from io import TextIOBase
-import sys
-import os
-import logging
-from pathlib import Path
-from functools import singledispatch
-from json import JSONDecodeError, load, dump
-from bqa import run_qa
-
-CWD = os.getcwd()
-LOG_LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR"]
-DEFAULT_LOG_LEVEL = "INFO"
+from bqa.benchmarking import generate_qubo_on_2d_grid, generate_qubo_on_random_regular_graph
+from bqa.config.core import canonicalize, full_preprocess, get_metrics
+from bqa.config.desugar_config import (DEFAULT_CLUSTER_COUPLING_AMPLITUDE, DEFAULT_EPS, DEFAULT_MAX_BOND_DIM, DEFAULT_MAX_BP_ITERS_NUMBER, desug_or_warn_and_set_default_if_not_present,
+                                       desugared_config_to_json)
+from bqa.core import run_qa
+from bqa.cli_utils import json_input_output_cli
+from bqa.config.validate_config import (ACTIONS_KEY, BACKEND_KEY, CLUSTER_COUPLING_AMPLITUDE_KEY, DAMPING_KEY, EDGES_KEY, EPS_KEY,
+                                        FINAL_MIXING_KEY, GET_BLOCH_VECTORS, INITIAL_MIXING_KEY, MAX_BOND_DIM_KEY, MAX_BP_ITER_NUMBER_KEY, MEASURE, NODES_KEY,
+                                        SCHEDULE_KEY, SEED_KEY, SPARSIFICATION_KEY, STARTING_MIXING_KEY, STEPS_NUMBER_KEY,
+                                        TOTAL_TIME_KEY, WEIGHT_KEY, validate_config)
 
 
-def print_help():
-    print(f"""usage: poetry run bqa_cli [options]
-
-    options:
-      -i | --input  [PATH]         relative to `{CWD}` (current working directory) path to `*.json` config,
-                                   stdin is used if not provided
-      -o | --output [PATH]         relative to `{CWD}` (current working directory) path to `*.json` where results are saved,
-                                   stdout is used if not provided
-      -l | --log-level [LOG_LEVEL] logging level, the argument may take value from {', '.join(LOG_LEVELS)},
-                                   {DEFAULT_LOG_LEVEL} is used if not provided
-      -h | --help:                 show this message and exit""")
+@json_input_output_cli
+def _validate(config):
+    "Config validator CLI. Use it to check the correctness of the config without execution."
+    return validate_config(config)
 
 
-class CliError(Exception):
-    pass
+@json_input_output_cli
+def _run_qa(config):
+    "Quantum annealing simulation runner CLI."
+    return run_qa(config)
 
 
-def print_unknown_arg_error(arg):
-    print(f"Invalid command line argument {arg}, run `{sys.argv[0]} --help` to get the documentation")
+@json_input_output_cli
+def _canonicalize(config):
+    "Config canonicalization CLI. Use it to see how the config looks after the canonicalization but before sparsification."
+    return desugared_config_to_json(canonicalize(config))
 
 
-def resolve_path_to_json(path):
-    try:
-        p = (CWD / Path(path)).resolve()
-    except (RuntimeError, OSError) as e:
-        raise CliError(f"Error while checking {path} file") from e
-    if p.suffix != ".json":
-        raise CliError(f"{p} must have .json suffix")
-    return p
+@json_input_output_cli
+def _full_preprocess(config):
+    "Full config preprocessing CLI. Use it to see how the config looks after the canonicalization and sparsification, right before the execution."
+    return desugared_config_to_json(full_preprocess(config))
 
 
-def resolve_log_level(log_level):
-    if log_level in LOG_LEVELS:
-        return log_level
-    else:
-        raise CliError(f"{log_level} cannot be interpeted as a logging level, must be one of {', '.join(LOG_LEVELS)}")
-
-
-def set_log_level(log_level):
-    logging.basicConfig(
-        level=getattr(logging, log_level),
-        format="%(asctime)s [%(levelname)s] %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
+# TODO: make propper input data validation
+@json_input_output_cli
+def _random_regular_graph(config):
+    "Generates an optimization problem on a random regular graph."
+    if not isinstance(config, dict):
+        raise ValueError(f"Input config to the random regular graph generator must be a dictionary, but recived {type(config)}")
+    degree = desug_or_warn_and_set_default_if_not_present(config, "degree", 3, int)
+    nodes_number = desug_or_warn_and_set_default_if_not_present(config, "nodes_number", 100, int)
+    seed = desug_or_warn_and_set_default_if_not_present(config, "seed", 42, int)
+    j_max = desug_or_warn_and_set_default_if_not_present(config, "j_max", 1.0, float)
+    j_min = desug_or_warn_and_set_default_if_not_present(config, "j_min", 1.0, float)
+    h_max = desug_or_warn_and_set_default_if_not_present(config, "h_max", 0.0, float)
+    h_min = desug_or_warn_and_set_default_if_not_present(config, "h_min", 0.0, float)
+    assert isinstance(seed, int) and seed >= 0
+    assert isinstance(nodes_number, int) and nodes_number >= 0
+    assert isinstance(degree, int) and degree >= 0
+    assert isinstance(h_min, float)
+    assert isinstance(h_max, float)
+    assert isinstance(j_min, float)
+    assert isinstance(j_max, float)
+    nodes, edges = generate_qubo_on_random_regular_graph(
+        nodes_number,
+        degree,
+        seed,
+        lambda rng, _: rng.uniform(h_min, h_max),
+        lambda rng, _: rng.uniform(j_min, j_max),
     )
+    return desugared_config_to_json({EDGES_KEY : edges, NODES_KEY : nodes, SEED_KEY : seed})
 
 
-def dispatch(arg, args_iter, context):
-    if arg in {"-h", "--help"}:
-        print_help()
-        exit(0)
-    elif arg in {"-i", "--input"}:
-        input_path = next(args_iter, None)
-        if input_path is None:
-            raise CliError(f"Input file is not provided after {arg} key")
-        context["input"] = resolve_path_to_json(input_path)
-        _parse_args(args_iter, context)
-    elif arg in {"-o", "--output"}:
-        output_path = next(args_iter, None)
-        if output_path is None:
-            raise CliError(f"Output file is not provided after {arg} key")
-        context["output"] = resolve_path_to_json(output_path)
-        _parse_args(args_iter, context)
-    elif arg in {"-l", "--log-level"}:
-        log_level = next(args_iter, None)
-        if log_level is None:
-            raise CliError(f"Logging level is not provided after {arg} key, must be one of {', '.join(LOG_LEVELS)}")
-        context["log-level"] = resolve_log_level(log_level)
-        _parse_args(args_iter, context)
-    else:
-        print_unknown_arg_error(arg)
-        exit(1)
+# TODO: make propper input data validation
+@json_input_output_cli
+def _2d_grid(config):
+    "Generates and optimization problem on a 2D grid."
+    if not isinstance(config, dict):
+        raise ValueError(f"Input config to the random regular graph generator must be a dictionary, but recived {type(config)}")
+    rows = desug_or_warn_and_set_default_if_not_present(config, "rows", 10, int)
+    cols = desug_or_warn_and_set_default_if_not_present(config, "cols", 10, int)
+    seed = desug_or_warn_and_set_default_if_not_present(config, "seed", 42, int)
+    j_max = desug_or_warn_and_set_default_if_not_present(config, "j_max", 1.0, float)
+    j_min = desug_or_warn_and_set_default_if_not_present(config, "j_min", 1.0, float)
+    h_max = desug_or_warn_and_set_default_if_not_present(config, "h_max", 0.0, float)
+    h_min = desug_or_warn_and_set_default_if_not_present(config, "h_min", 0.0, float)
+    assert isinstance(seed, int) and seed >= 0
+    assert isinstance(rows, int) and rows >= 0
+    assert isinstance(cols, int) and cols >= 0
+    assert isinstance(h_min, float)
+    assert isinstance(h_max, float)
+    assert isinstance(j_min, float)
+    assert isinstance(j_max, float)
+    nodes, edges = generate_qubo_on_2d_grid(
+        rows,
+        cols,
+        seed,
+        lambda rng, _: rng.uniform(h_min, h_max),
+        lambda rng, _: rng.uniform(j_min, j_max),
+    )
+    return desugared_config_to_json({EDGES_KEY : edges, NODES_KEY : nodes, SEED_KEY : seed})
 
 
-def _parse_args(args_iter, context):
-    arg = next(args_iter, None)
-    if arg is None:
-        return
-    else:
-        dispatch(arg, args_iter, context)
+@json_input_output_cli
+def _cupy(config):
+    "Sets backend to `cupy`."
+    config[BACKEND_KEY] = "cupy"
+    return config
 
 
-def make_default_context():
-    return {
-        "input" : sys.stdin,
-        "output" : sys.stdout,
-        "log-level" : DEFAULT_LOG_LEVEL,
+@json_input_output_cli
+def _sparsify(config):
+    "Sets default sparsification strategy."
+    config[SPARSIFICATION_KEY] = {EPS_KEY : DEFAULT_EPS, CLUSTER_COUPLING_AMPLITUDE_KEY : DEFAULT_CLUSTER_COUPLING_AMPLITUDE}
+    return config
+
+
+@json_input_output_cli
+def _metrics(config):
+    "Returns some metrics of the optimization problem after full preprocessing."
+    return get_metrics(config)
+
+
+@json_input_output_cli
+def _adjust_schedule(config):
+    "Sets quantum annealing schedule according the problem's metrics."
+    config = full_preprocess(config)
+    metrics = get_metrics(config)
+    total_time = 20 * metrics["mean_degree"] / metrics["mean_abs_coupling"]
+    steps_number = 10 * total_time * (metrics["mean_degree"] * metrics["mean_abs_coupling"] + metrics["mean_abs_field"])
+    config[SCHEDULE_KEY] = {
+        TOTAL_TIME_KEY : total_time,
+        STARTING_MIXING_KEY : 1.0,
+        ACTIONS_KEY : [
+            {
+                INITIAL_MIXING_KEY : 1.0,
+                FINAL_MIXING_KEY : 0.0,
+                WEIGHT_KEY : 1.0,
+                STEPS_NUMBER_KEY : int(steps_number),
+            },
+            GET_BLOCH_VECTORS,
+            MEASURE,
+        ]
     }
+    return desugared_config_to_json(config)
 
 
-def parse_args(argv):
-    _, *args = argv
-    args_iter = iter(args)
-    context = make_default_context()
-    _parse_args(args_iter, context)
-    return context
+@json_input_output_cli
+def _x2_bond_dim(config):
+    f"Sets `{MAX_BOND_DIM_KEY}` twice larger."
+    if MAX_BOND_DIM_KEY in config:
+        config[MAX_BOND_DIM_KEY] *= 2
+    else:
+        config[MAX_BOND_DIM_KEY] = 2 * DEFAULT_MAX_BOND_DIM
+    return config
 
 
-@singledispatch
-def read_json(src):
-    raise TypeError(f"Unsupported destination: {type(src)}")
+@json_input_output_cli
+def _inc_damping(config):
+    f"Sets new value of damping as follows `{DAMPING_KEY} <- 0.5 * {DAMPING_KEY} + 0.5`."
+    prev_damping = config.get(DAMPING_KEY, 0.)
+    config[DAMPING_KEY] = 0.5 * prev_damping + 0.5
+    return config
 
 
-@read_json.register
-def _(src: TextIOBase):
-    try:
-        return load(src)
-    except (UnicodeError, OSError) as e:
-        raise CliError("Error while parsing json data") from e
-
-
-@read_json.register
-def _(src: Path):
-    try:
-        with src.open("r") as f:
-            return load(f)
-    except (JSONDecodeError, PermissionError, IsADirectoryError, UnicodeError, OSError) as e:
-        raise CliError("Error while parsing json data") from e
-
-
-@singledispatch
-def dump_json(dst, _) -> None:
-    raise TypeError(f"Unsupported destination: {type(dst)}")
-
-
-@dump_json.register
-def _(dst: TextIOBase, data):
-    try:
-        dump(data, dst)
-    except OSError as e:
-        raise CliError("Error while writing result") from e
-
-
-@dump_json.register
-def _(dst: Path, data):
-    try:
-        with dst.open("w") as f:
-            dump(data, f)
-    except (PermissionError, IsADirectoryError, OSError) as e:
-        raise CliError("Error while writing result") from e
-
-
-def format_error(e):
-    msgs = []
-    while e:
-        msgs.append(str(e))
-        e = e.__cause__
-    return "\ncaused by: ".join(msgs)
-
-
-def cli():
-    try:
-        context = parse_args(sys.argv)
-        set_log_level(context["log-level"])
-        config = read_json(context["input"])
-        result = run_qa(config)
-        dump_json(context["output"], result)
-    except Exception as e:
-        print(format_error(e), file=sys.stderr)
-        sys.exit(1)
-
+@json_input_output_cli
+def _x2_bp_iters(config):
+    f"Sets {MAX_BP_ITER_NUMBER_KEY} twice larger."
+    if MAX_BP_ITER_NUMBER_KEY in config:
+        config[MAX_BOND_DIM_KEY] *= 2
+    else:
+        config[MAX_BOND_DIM_KEY] = 2 * DEFAULT_MAX_BP_ITERS_NUMBER
+    return config

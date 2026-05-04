@@ -4,3 +4,4 @@ __version__ = version("bqa")
 
 from bqa.core import run_qa
 from bqa.config.validate_config import validate_config
+from bqa.config.core import canonicalize, full_preprocess, get_metrics

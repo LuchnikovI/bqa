@@ -7,5 +7,7 @@ def get_nodes_number(config):
         max((max(lhs, rhs) for lhs, rhs in config[EDGES_KEY].keys()), default = -1),
     )
 
+
 def get_edges_number(config):
     return len(config[EDGES_KEY])
+

@@ -24,4 +24,16 @@ qem = { git = "https://github.com/LuchnikovI/qem", rev = "8156bfd" }
 hypothesis = "^6.152.4"
 
 [tool.poetry.scripts]
-bqa_cli = "bqa.cli:cli"
+validate = "bqa.cli:_validate"
+run_qa = "bqa.cli:_run_qa"
+canonicalize = "bqa.cli:_canonicalize"
+full_preprocess = "bqa.cli:_full_preprocess"
+random_regular_graph = "bqa.cli:_random_regular_graph"
+2d_grid = "bqa.cli:_2d_grid"
+cupy = "bqa.cli:_cupy"
+sparsify = "bqa.cli:_sparsify"
+metrics = "bqa.cli:_metrics"
+adjust_schedule = "bqa.cli:_adjust_schedule"
+x2_bond_dim = "bqa.cli:_x2_bond_dim"
+inc_damping = "bqa.cli:_inc_damping"
+x2_bp_iters = "bqa.cli:_x2_bp_iters"

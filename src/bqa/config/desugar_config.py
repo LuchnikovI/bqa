@@ -37,15 +37,15 @@ DEFAULT_MAX_BOND_DIM = 4
 
 DEFAULT_MAX_BP_ITERS_NUMBER = 75
 
-DEFAULT_BP_EPS = 1e-6
+DEFAULT_BP_EPS = 1e-5
 
-DEFAULT_PINV_EPS = 1e-6
+DEFAULT_PINV_EPS = 1e-5
 
 DEFAULT_BACKEND = "numpy"
 
 DEFAULT_DEFAULT_FIELD = 0.0
 
-DEFAULT_MEASUREMENT_THRESHOLD = 0.95
+DEFAULT_MEASUREMENT_THRESHOLD = 0.99
 
 DEFAULT_SEED = 42
 
@@ -81,6 +81,7 @@ SIMPLE_ACTIONS = {MEASURE, GET_BLOCH_VECTORS}
 DEFAULT_ACTIONS = [
     DEFAULT_EVOLUTION,
     GET_BLOCH_VECTORS,
+    MEASURE,
 ]
 
 DEFAULT_SCHEDULE = {
@@ -194,3 +195,8 @@ def desugar_config(config):
         )
     }
 
+
+def desugared_config_to_json(config):
+    edges = [[list(edge_id), cpl] for edge_id, cpl in config[EDGES_KEY].items()]
+    nodes = [[node_id, field] for node_id, field in config[NODES_KEY].items()]
+    return {EDGES_KEY : edges, NODES_KEY : nodes, **{k : v for k, v in config.items() if k not in {NODES_KEY, EDGES_KEY}}}

@@ -191,7 +191,7 @@ def sparsify_config(config):
         NODES_KEY : nodes,
         EDGES_KEY : edges,
         POSTPROCESSING_KEY : postprocessing_info,
-        **{k : v for k, v in config.items() if k != NODES_KEY and k != EDGES_KEY},
+        **{k : v for k, v in config.items() if k not in {NODES_KEY, EDGES_KEY, SPARSIFICATION_KEY}},
     }
     return new_config
 
