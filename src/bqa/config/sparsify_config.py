@@ -2,9 +2,9 @@ import logging
 from copy import copy
 from dataclasses import dataclass
 from heapq import heapify, heappop, heappush
-from bqa.config.desugar_config import canonicalize_edge_id
+from bqa.config.desugar_config import DESUGARED_KEY, canonicalize_edge_id, get_ids_iter
 from bqa.config.validate_config import (CLUSTER_COUPLING_AMPLITUDE_KEY, DEFAULT_FIELD_KEY, EDGES_KEY, NODES_KEY, POSTPROCESSING_KEY,
-                                        SPARSIFICATION_KEY, EPS_KEY)
+                                        SPARSIFICATION_KEY, EPS_KEY, VALIDATED_KEY)
 from bqa.config.pipeline import pipeline
 
 log = logging.getLogger(__name__)
@@ -12,6 +12,15 @@ log = logging.getLogger(__name__)
 BLOCH_VECTORS_KEY = "bloch_vectors"
 
 MEASUREMENT_OUTCOMES_KEY = "measurement_outcomes"
+
+SPARSIFIED_KEY = "sparsified"
+
+def get_nodes_number(nodes, edges):
+    return 1 + max(
+        max(get_ids_iter(nodes), default=-1),
+        max((max(lhs, rhs) for lhs, rhs in get_ids_iter(edges)), default = -1),
+    )
+
 
 @dataclass(frozen=True)
 class Node:
@@ -51,12 +60,9 @@ def node_to_tree(couplings_and_neighs, ampl):
 class DynGraph:
     def __init__(self, edges, nodes, default_field):
         self.default_field = default_field
-        self.nodes = copy(nodes)
-        self.edges = copy(edges)
-        self.graph_size = max(
-            max(self.nodes.keys(), default = -1),
-            max((max(i, j) for i, j in self.edges.keys()), default = -1)
-        ) + 1
+        self.nodes = copy(nodes) if isinstance(nodes, dict) else dict(nodes)
+        self.edges = copy(edges) if isinstance(edges, dict) else {tuple(edge_id) : ampl for edge_id, ampl in edges}
+        self.graph_size = get_nodes_number(self.nodes, self.edges)
         self.graph = [set() for _ in range(self.graph_size)]
         for i, j in self.edges.keys():
             self.graph[i].add(j)
@@ -175,9 +181,17 @@ class DynGraph:
 
 @pipeline
 def sparsify_config(config):
+    assert config.get(DESUGARED_KEY)
+    assert config.get(VALIDATED_KEY)
+    if config.get(SPARSIFIED_KEY):
+        log.warning(f"`{SPARSIFIED_KEY}` flag set to `{config[SPARSIFIED_KEY]}`, skipping sparsification")
+        return config
     sparsification = config[SPARSIFICATION_KEY]
     if sparsification is None:
-        return config
+        new_config = copy(config)
+        new_config[SPARSIFIED_KEY] = True
+        del new_config[SPARSIFICATION_KEY]
+        return new_config
     nodes = config[NODES_KEY]
     edges = config[EDGES_KEY]
     default_field = config[DEFAULT_FIELD_KEY]
@@ -191,6 +205,7 @@ def sparsify_config(config):
         NODES_KEY : nodes,
         EDGES_KEY : edges,
         POSTPROCESSING_KEY : postprocessing_info,
+        SPARSIFIED_KEY : True,
         **{k : v for k, v in config.items() if k not in {NODES_KEY, EDGES_KEY, SPARSIFICATION_KEY}},
     }
     return new_config
@@ -199,6 +214,7 @@ def sparsify_config(config):
 def collapse_clusters(solution, node_to_childs, original_size):
     collapsed_solution = solution[:original_size]
     for par, chlds in node_to_childs.items():
+        par = int(par)  # could be deserialized from json, needs conversionf back from string
         votes = {solution[par]: 1}
         for chld in chlds:
             value = solution[chld]

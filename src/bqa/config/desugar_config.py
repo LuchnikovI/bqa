@@ -25,6 +25,7 @@ from bqa.config.validate_config import (
     STARTING_MIXING_KEY,
     STEPS_NUMBER_KEY,
     TOTAL_TIME_KEY,
+    VALIDATED_KEY,
     WEIGHT_KEY,
 )
 from bqa.config.pipeline import pipeline
@@ -80,7 +81,6 @@ SIMPLE_ACTIONS = {MEASURE, GET_BLOCH_VECTORS}
 
 DEFAULT_ACTIONS = [
     DEFAULT_EVOLUTION,
-    GET_BLOCH_VECTORS,
     MEASURE,
 ]
 
@@ -90,7 +90,22 @@ DEFAULT_SCHEDULE = {
     ACTIONS_KEY : DEFAULT_ACTIONS,
 }
 
+TOP_DESUGARED_KEYS = {NODES_KEY, EDGES_KEY, MAX_BOND_DIM_KEY, MAX_BP_ITER_NUMBER_KEY, BP_EPS_KEY, PINV_EPS_KEY,
+                      BACKEND_KEY, DEFAULT_FIELD_KEY, MEASUREMENT_THRESHOLD_KEY, SEED_KEY, DAMPING_KEY, SCHEDULE_KEY,
+                      SPARSIFICATION_KEY}
+
+DESUGARED_KEY = "desugared"
+
 log = logging.getLogger(__name__)
+
+
+def get_iter(container):
+    return map(tuple, (container.items() if isinstance(container, dict) else container))
+
+
+def get_ids_iter(container):
+    return map(lambda x: x[0], get_iter(container))
+
 
 def canonicalize_edge_id(edge_id):
     i, j = edge_id
@@ -169,6 +184,10 @@ def desug_schedule(schedule):
 
 @pipeline
 def desugar_config(config):
+    assert config.get(VALIDATED_KEY), "`desugar_config` call on non validated config"
+    if config.get(DESUGARED_KEY):
+        log.warning(f"`{DESUGARED_KEY}` flag set to `{config[DESUGARED_KEY]}`, skipping desugaring")
+        return config
     return {
         NODES_KEY : desug_or_warn_and_set_default_if_not_present(config, NODES_KEY, DEFAULT_NODES, desug_nodes),
         EDGES_KEY : desug_edges(config[EDGES_KEY]),
@@ -192,11 +211,16 @@ def desugar_config(config):
             SPARSIFICATION_KEY,
             DEFAULT_SPARSIFICATION,
             desug_sparsification,
-        )
+        ),
+        DESUGARED_KEY : True,
+        **{k : v for k, v in config.items() if k not in TOP_DESUGARED_KEYS},
     }
 
 
 def desugared_config_to_json(config):
-    edges = [[list(edge_id), cpl] for edge_id, cpl in config[EDGES_KEY].items()]
-    nodes = [[node_id, field] for node_id, field in config[NODES_KEY].items()]
+    edges = config[EDGES_KEY]
+    nodes = config[NODES_KEY]
+    edges = [[list(edge_id), cpl] for edge_id, cpl in get_iter(edges)]
+    nodes = [[node_id, field] for node_id, field in get_iter(nodes)]
     return {EDGES_KEY : edges, NODES_KEY : nodes, **{k : v for k, v in config.items() if k not in {NODES_KEY, EDGES_KEY}}}
+

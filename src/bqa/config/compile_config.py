@@ -2,12 +2,16 @@ from dataclasses import dataclass
 from typing import Type
 from numpy import array_equal, isclose
 from bqa.backends import BACKEND_STR_TO_BACKEND, Tensor
-from bqa.config.desugar_config import canonicalize_edge_id
-from bqa.config.metrics import get_edges_number, get_nodes_number
-from bqa.config.validate_config import (ACTIONS_KEY, BACKEND_KEY, BP_EPS_KEY, DAMPING_KEY, EDGES_KEY, DEFAULT_FIELD_KEY,
-                                        FINAL_MIXING_KEY, INITIAL_MIXING_KEY,  MAX_BOND_DIM_KEY, MAX_BP_ITER_NUMBER_KEY, MEASUREMENT_THRESHOLD_KEY, NODES_KEY,
-                                        PINV_EPS_KEY, SCHEDULE_KEY, SEED_KEY, STEPS_NUMBER_KEY, TOTAL_TIME_KEY, WEIGHT_KEY)
+from bqa.config.desugar_config import DESUGARED_KEY, get_ids_iter, get_iter
+from bqa.config.sparsify_config import SPARSIFIED_KEY, get_nodes_number
+from bqa.config.validate_config import (ACTIONS_KEY, BACKEND_KEY, BP_EPS_KEY,
+                                        DAMPING_KEY, EDGES_KEY, DEFAULT_FIELD_KEY,
+                                        FINAL_MIXING_KEY, INITIAL_MIXING_KEY,  MAX_BOND_DIM_KEY,
+                                        MAX_BP_ITER_NUMBER_KEY, MEASUREMENT_THRESHOLD_KEY, NODES_KEY,
+                                        PINV_EPS_KEY, SCHEDULE_KEY, SEED_KEY, STEPS_NUMBER_KEY,
+                                        TOTAL_TIME_KEY, VALIDATED_KEY, WEIGHT_KEY)
 from bqa.config.pipeline import pipeline
+
 
 @dataclass
 class RawLayout:
@@ -107,30 +111,39 @@ class Context:
 
 def make_graph(config, nodes_number):
     graph = [[] for _ in range(nodes_number)]
-    for lhs, rhs in config[EDGES_KEY].keys():
+    for lhs, rhs in get_ids_iter(config[EDGES_KEY]):
         graph[lhs].append(rhs)
         graph[rhs].append(lhs)
     return graph
 
 
-def directed_edges_iter(config):
-    for edge_id in config[EDGES_KEY].keys():
-        yield edge_id
-    for lhs_id, rhs_id in config[EDGES_KEY].keys():
-        yield rhs_id, lhs_id
+def swap(tpl):
+    return tpl[1], tpl[0]
+
+
+def get_directed_edge_ids_iter(config):
+    edges = config[EDGES_KEY]
+    yield from map(tuple, get_ids_iter(edges))
+    yield from map(swap, get_ids_iter(edges))
 
 
 def make_edge_to_msg_position(config):
-    return {edge: pos for pos, edge in enumerate(directed_edges_iter(config))}
+    return dict(map(swap, enumerate(get_directed_edge_ids_iter(config))))
 
 
 def make_edge_to_lmbd_position(config):
-    lmbds_number = get_edges_number(config)
-    return {edge: pos % lmbds_number for pos, edge in enumerate(directed_edges_iter(config))}
+    lmbds_number = len(config[EDGES_KEY])
+    return {edge_id: pos % lmbds_number for pos, edge_id in enumerate(get_directed_edge_ids_iter(config))}
+
+
+def _make_edge_to_amplitude(config):
+    edges = config[EDGES_KEY]
+    yield from ((tuple(edge_id), ampl) for edge_id, ampl in get_iter(edges))
+    yield from (((rhs_id, lhs_id), ampl) for (lhs_id, rhs_id), ampl in get_iter(edges))
+
 
 def make_edge_to_amplitue(config):
-    edges = config[EDGES_KEY]
-    return {k : edges[canonicalize_edge_id(k)] for k in directed_edges_iter(config)}
+    return dict(_make_edge_to_amplitude(config))
 
 
 def make_msg_position_to_lmbd_position(
@@ -202,15 +215,21 @@ def make_compile_schedule_generator(schedule):
 
 @pipeline
 def compile_config(config):
-    nodes_number = get_nodes_number(config)
-    edges_number = get_edges_number(config)
+    assert config.get(VALIDATED_KEY)
+    assert config.get(DESUGARED_KEY)
+    assert config.get(SPARSIFIED_KEY)
+    nodes_number = get_nodes_number(config[NODES_KEY], config[EDGES_KEY])
+    edges_number = len(config[EDGES_KEY])
     backend = BACKEND_STR_TO_BACKEND[config[BACKEND_KEY]]
     graph = make_graph(config, nodes_number)
     edge_to_msg_position = make_edge_to_msg_position(config)
     edge_to_lmbd_position = make_edge_to_lmbd_position(config)
     default_field = config[DEFAULT_FIELD_KEY]
     edge_to_ampl = make_edge_to_amplitue(config)
-    node_to_ampl = {node_id : config[NODES_KEY].get(node_id, default_field) for node_id in range(nodes_number)}
+    node_to_ampl = dict(config[NODES_KEY])
+    for node_id in range(nodes_number):
+        if node_id not in node_to_ampl:
+            node_to_ampl[node_id] = default_field
     msg_position_to_lmbd_position = make_msg_position_to_lmbd_position(
         edges_number, backend
     )

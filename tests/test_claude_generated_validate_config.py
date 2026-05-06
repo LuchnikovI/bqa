@@ -189,13 +189,6 @@ def valid_config(draw):
 class TestValidConfigAccepted:
 
     @given(cfg=valid_config())
-    @settings(max_examples=300, suppress_health_check=[HealthCheck.too_slow])
-    def test_valid_config_returns_same_object(self, cfg):
-        """validate_config must return the config it receives unchanged."""
-        result = validate_config(cfg)
-        assert result is cfg
-
-    @given(cfg=valid_config())
     def test_valid_config_does_not_raise(self, cfg):
         """Any config produced by valid_config() must not raise."""
         validate_config(cfg)  # must not throw

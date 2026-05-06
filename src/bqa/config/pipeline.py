@@ -1,4 +1,4 @@
-class Pipe:
+class pipeline:
     def __init__(self, func):
         self.func = func
 
@@ -6,10 +6,8 @@ class Pipe:
         return self.func(*args, **kwds)
 
     def __or__(self, other):
-        return Pipe(lambda x: other(self(x)))
+        return pipeline(lambda x: other(self(x)))
 
     def __ror__(self, value):
         return self(value)
 
-def pipeline(func):
-    return Pipe(func)

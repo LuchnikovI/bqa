@@ -1,13 +1,14 @@
 from bqa.benchmarking import generate_qubo_on_2d_grid, generate_qubo_on_random_regular_graph
 from bqa.config.core import canonicalize, full_preprocess, get_metrics
-from bqa.config.desugar_config import (DEFAULT_CLUSTER_COUPLING_AMPLITUDE, DEFAULT_EPS, DEFAULT_MAX_BOND_DIM, DEFAULT_MAX_BP_ITERS_NUMBER, desug_or_warn_and_set_default_if_not_present,
+from bqa.config.desugar_config import (DEFAULT_CLUSTER_COUPLING_AMPLITUDE, DEFAULT_EPS, DEFAULT_MAX_BOND_DIM,
+                                       DEFAULT_MAX_BP_ITERS_NUMBER, desug_or_warn_and_set_default_if_not_present,
                                        desugared_config_to_json)
 from bqa.core import run_qa
 from bqa.cli_utils import json_input_output_cli
 from bqa.config.validate_config import (ACTIONS_KEY, BACKEND_KEY, CLUSTER_COUPLING_AMPLITUDE_KEY, DAMPING_KEY, EDGES_KEY, EPS_KEY,
-                                        FINAL_MIXING_KEY, GET_BLOCH_VECTORS, INITIAL_MIXING_KEY, MAX_BOND_DIM_KEY, MAX_BP_ITER_NUMBER_KEY, MEASURE, NODES_KEY,
-                                        SCHEDULE_KEY, SEED_KEY, SPARSIFICATION_KEY, STARTING_MIXING_KEY, STEPS_NUMBER_KEY,
-                                        TOTAL_TIME_KEY, WEIGHT_KEY, validate_config)
+                                        FINAL_MIXING_KEY, GET_BLOCH_VECTORS, INITIAL_MIXING_KEY, MAX_BOND_DIM_KEY, MAX_BP_ITER_NUMBER_KEY,
+                                        MEASURE, NODES_KEY, SCHEDULE_KEY, SEED_KEY, SPARSIFICATION_KEY, STARTING_MIXING_KEY, STEPS_NUMBER_KEY,
+                                        TOTAL_TIME_KEY, WEIGHT_KEY, ConfigSyntaxError, validate_all_records, validate_config, validate_if_present, validate_non_neg_int, validate_number, validate_positive_int)
 
 
 @json_input_output_cli
@@ -33,13 +34,31 @@ def _full_preprocess(config):
     "Full config preprocessing CLI. Use it to see how the config looks after the canonicalization and sparsification, right before the execution."
     return desugared_config_to_json(full_preprocess(config))
 
+def validate_degree(degree):
+    if not isinstance(degree, int):
+        raise ConfigSyntaxError(f"Must be integer value, got value of type `{type(degree)}`")
+    if degree < 3:
+        raise ConfigSyntaxError(f"Must be >= 3, but got value {degree}")
+
 
 # TODO: make propper input data validation
 @json_input_output_cli
 def _random_regular_graph(config):
     "Generates an optimization problem on a random regular graph."
     if not isinstance(config, dict):
-        raise ValueError(f"Input config to the random regular graph generator must be a dictionary, but recived {type(config)}")
+        raise ConfigSyntaxError(f"Input config to the random regular graph generator must be a dictionary, but recived {type(config)}")
+    validate_all_records(
+        config,
+        [
+            ["degree", validate_degree],
+            ["nodes_number", validate_positive_int],
+            ["seed", validate_non_neg_int],
+            ["j_max", validate_number],
+            ["j_min", validate_number],
+            ["h_max", validate_number],
+            ["h_min", validate_number],
+        ]
+    )
     degree = desug_or_warn_and_set_default_if_not_present(config, "degree", 3, int)
     nodes_number = desug_or_warn_and_set_default_if_not_present(config, "nodes_number", 100, int)
     seed = desug_or_warn_and_set_default_if_not_present(config, "seed", 42, int)
@@ -47,13 +66,6 @@ def _random_regular_graph(config):
     j_min = desug_or_warn_and_set_default_if_not_present(config, "j_min", 1.0, float)
     h_max = desug_or_warn_and_set_default_if_not_present(config, "h_max", 0.0, float)
     h_min = desug_or_warn_and_set_default_if_not_present(config, "h_min", 0.0, float)
-    assert isinstance(seed, int) and seed >= 0
-    assert isinstance(nodes_number, int) and nodes_number >= 0
-    assert isinstance(degree, int) and degree >= 0
-    assert isinstance(h_min, float)
-    assert isinstance(h_max, float)
-    assert isinstance(j_min, float)
-    assert isinstance(j_max, float)
     nodes, edges = generate_qubo_on_random_regular_graph(
         nodes_number,
         degree,
@@ -70,6 +82,18 @@ def _2d_grid(config):
     "Generates and optimization problem on a 2D grid."
     if not isinstance(config, dict):
         raise ValueError(f"Input config to the random regular graph generator must be a dictionary, but recived {type(config)}")
+    validate_all_records(
+        config,
+        [
+            ["rows", validate_positive_int],
+            ["cols", validate_positive_int],
+            ["seed", validate_non_neg_int],
+            ["j_max", validate_number],
+            ["j_min", validate_number],
+            ["h_max", validate_number],
+            ["h_min", validate_number],
+        ]
+    )
     rows = desug_or_warn_and_set_default_if_not_present(config, "rows", 10, int)
     cols = desug_or_warn_and_set_default_if_not_present(config, "cols", 10, int)
     seed = desug_or_warn_and_set_default_if_not_present(config, "seed", 42, int)
@@ -77,13 +101,6 @@ def _2d_grid(config):
     j_min = desug_or_warn_and_set_default_if_not_present(config, "j_min", 1.0, float)
     h_max = desug_or_warn_and_set_default_if_not_present(config, "h_max", 0.0, float)
     h_min = desug_or_warn_and_set_default_if_not_present(config, "h_min", 0.0, float)
-    assert isinstance(seed, int) and seed >= 0
-    assert isinstance(rows, int) and rows >= 0
-    assert isinstance(cols, int) and cols >= 0
-    assert isinstance(h_min, float)
-    assert isinstance(h_max, float)
-    assert isinstance(j_min, float)
-    assert isinstance(j_max, float)
     nodes, edges = generate_qubo_on_2d_grid(
         rows,
         cols,
@@ -131,7 +148,6 @@ def _adjust_schedule(config):
                 WEIGHT_KEY : 1.0,
                 STEPS_NUMBER_KEY : int(steps_number),
             },
-            GET_BLOCH_VECTORS,
             MEASURE,
         ]
     }
@@ -164,3 +180,4 @@ def _x2_bp_iters(config):
     else:
         config[MAX_BOND_DIM_KEY] = 2 * DEFAULT_MAX_BP_ITERS_NUMBER
     return config
+

@@ -6,6 +6,8 @@ from pathlib import Path
 from functools import singledispatch
 from json import JSONDecodeError, load, dump
 
+from bqa.config.validate_config import EDGES_KEY, NODES_KEY
+
 CWD = os.getcwd()
 LOG_LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR"]
 DEFAULT_LOG_LEVEL = "INFO"
@@ -166,6 +168,7 @@ options:
             result = self.func(config)
             dump_json(context["output"], result)
         except Exception as e:
+            raise e
             print(format_error(e), file=sys.stderr)
             sys.exit(1)        
 

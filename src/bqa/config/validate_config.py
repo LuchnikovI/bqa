@@ -1,3 +1,4 @@
+from copy import copy
 import logging
 from math import isclose, isfinite
 from bqa.backends import BACKEND_STR_TO_BACKEND
@@ -53,6 +54,8 @@ CLUSTER_COUPLING_AMPLITUDE_KEY = "cluster_coupling_amplitude"
 EPS_KEY = "eps"
 
 POSTPROCESSING_KEY = "postprocessing"
+
+VALIDATED_KEY = "validated"
 
 # action types
 
@@ -257,6 +260,9 @@ def validate_sparsification_actions_consistency(config):
 def validate_config(config):
     if not isinstance(config, dict):
         raise ConfigSyntaxError(f"Config must be a dictionary, but `{type(config)}` is received")
+    if config.get(VALIDATED_KEY):
+        log.warning(f"`{VALIDATED_KEY}` flag set to `{config[VALIDATED_KEY]}`, skipping validation")
+        return config
     if EDGES_KEY not in config:
         raise ConfigSyntaxError(f"Invalid config: `{EDGES_KEY}` is not present")
     validate_edges(config[EDGES_KEY])
@@ -278,5 +284,7 @@ def validate_config(config):
         ],
     )
     validate_sparsification_actions_consistency(config)
-    return config
+    config_copy = copy(config)
+    config_copy[VALIDATED_KEY] = True
+    return config_copy
 

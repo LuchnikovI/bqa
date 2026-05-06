@@ -40,6 +40,8 @@ for _k in [
 ]:
     setattr(bqa_validate, _k, _k.lower())
 
+from bqa.backends import BACKEND_STR_TO_BACKEND
+from bqa.config.validate_config import validate_config
 from bqa.config.desugar_config import (  # noqa: E402 — after stub setup
     desugar_config,
     desug_edges,
@@ -72,7 +74,7 @@ positive_floats = st.floats(min_value=1e-9, max_value=1e9, allow_nan=False)
 positive_ints = st.integers(min_value=1, max_value=10_000)
 non_neg_ints = st.integers(min_value=0, max_value=10_000)
 node_ids = st.integers(min_value=0, max_value=50)
-VALID_BACKENDS = ["numpy", "torch"]
+VALID_BACKENDS = list(BACKEND_STR_TO_BACKEND.keys())
 
 
 @st.composite
@@ -124,7 +126,7 @@ def valid_actions(draw):
         actions.append(action)
 
     # Optionally mix in some string actions
-    prefix = draw(st.lists(st.sampled_from([MEASURE, GET_BLOCH_VECTORS]), max_size=2))
+    prefix = draw(st.lists(st.sampled_from([MEASURE]), max_size=2))
     return prefix + actions
 
 
@@ -483,7 +485,7 @@ class TestDesugConfig:
     @given(cfg=valid_raw_config())
     @settings(max_examples=300, suppress_health_check=[HealthCheck.too_slow])
     def test_output_contains_all_top_level_keys(self, cfg):
-        result = desugar_config(cfg)
+        result = desugar_config(validate_config(cfg))
         for key in [
             NODES_KEY, EDGES_KEY, MAX_BOND_DIM_KEY, MAX_BP_ITER_NUMBER_KEY,
             BP_EPS_KEY, PINV_EPS_KEY, BACKEND_KEY, DEFAULT_FIELD_KEY,
@@ -494,7 +496,7 @@ class TestDesugConfig:
 
     @given(cfg=valid_raw_config())
     def test_edges_are_all_canonical(self, cfg):
-        result = desugar_config(cfg)
+        result = desugar_config(validate_config(cfg))
         for i, j in result[EDGES_KEY]:
             assert i < j, f"Non-canonical edge ({i}, {j}) in output"
 
@@ -504,7 +506,7 @@ class TestDesugConfig:
         REGRESSION TEST: catches missing `return` bug.
         With the bug, every field processed through desug_fn returns None.
         """
-        result = desugar_config(cfg)
+        result = desugar_config(validate_config(cfg))
         numeric_keys = [
             BP_EPS_KEY, PINV_EPS_KEY, DEFAULT_FIELD_KEY,
             MEASUREMENT_THRESHOLD_KEY, DAMPING_KEY,
@@ -517,7 +519,7 @@ class TestDesugConfig:
 
     @given(cfg=valid_raw_config())
     def test_schedule_is_fully_populated_dict(self, cfg):
-        result = desugar_config(cfg)
+        result = desugar_config(validate_config(cfg))
         sch = result[SCHEDULE_KEY]
         assert isinstance(sch, dict)
         assert TOTAL_TIME_KEY in sch
@@ -527,7 +529,7 @@ class TestDesugConfig:
     @given(edges=valid_edge_list())
     def test_minimal_config_desugars_without_error(self, edges):
         """A config with only edges must produce a fully populated output."""
-        result = desugar_config({EDGES_KEY: edges})
+        result = desugar_config(validate_config({EDGES_KEY: edges}))
         assert result[MAX_BOND_DIM_KEY] == DEFAULT_MAX_BOND_DIM
         assert result[SEED_KEY] == DEFAULT_SEED
         assert result[BACKEND_KEY] == DEFAULT_BACKEND
@@ -535,7 +537,7 @@ class TestDesugConfig:
     @given(cfg=valid_raw_config())
     def test_explicit_values_not_overwritten_by_defaults(self, cfg):
         """Any value explicitly set in the input must appear in the output."""
-        result = desugar_config(cfg)
+        result = desugar_config(validate_config(cfg))
         if MAX_BOND_DIM_KEY in cfg:
             assert result[MAX_BOND_DIM_KEY] == cfg[MAX_BOND_DIM_KEY]
         if SEED_KEY in cfg:
@@ -549,7 +551,7 @@ class TestDesugConfig:
     def test_input_config_not_mutated(self, cfg):
         """desugar_config must not modify the original config dict."""
         original = copy.deepcopy(cfg)
-        desugar_config(cfg)
+        desugar_config(validate_config(cfg))
         assert cfg == original
 
     @given(cfg=valid_raw_config())
@@ -559,14 +561,15 @@ class TestDesugConfig:
         objects. Mutating one output must not affect another.
         """
         edges = cfg[EDGES_KEY]
-        r1 = desugar_config({EDGES_KEY: edges})
-        r2 = desugar_config({EDGES_KEY: edges})
+        r1 = desugar_config(validate_config({EDGES_KEY: edges}))
+        r2 = desugar_config(validate_config({EDGES_KEY: edges}))
         # Mutate r1's schedule actions and verify r2 is unaffected
         r1[SCHEDULE_KEY][ACTIONS_KEY].append("sentinel")
         assert "sentinel" not in r2[SCHEDULE_KEY][ACTIONS_KEY]
 
     @given(cfg=valid_raw_config())
     def test_sparsification_none_stays_none(self, cfg):
+        cfg = validate_config(cfg)
         cfg.pop(SPARSIFICATION_KEY, None)
         result = desugar_config(cfg)
         assert result[SPARSIFICATION_KEY] is None
@@ -574,6 +577,7 @@ class TestDesugConfig:
     @given(cfg=valid_raw_config(), sp=valid_sparsification())
     def test_sparsification_present_is_dict_with_float_values(self, cfg, sp):
         cfg[SPARSIFICATION_KEY] = sp
+        cfg = validate_config(cfg)
         result = desugar_config(cfg)
         assert isinstance(result[SPARSIFICATION_KEY], dict)
         assert isinstance(result[SPARSIFICATION_KEY][EPS_KEY], float)
