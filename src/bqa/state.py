@@ -6,8 +6,7 @@ from typing import Iterator
 from numpy.random import Generator, default_rng
 from numpy.typing import NDArray
 from bqa.backends import Tensor
-from bqa.config.config_canonicalization import Context
-from bqa.config.config_canonicalization import Layout
+from bqa.config.compile_config import Context, Layout
 from bqa.utils import NP_DTYPE
 
 # for efficiency reasons this code is highly imperative,
@@ -101,7 +100,7 @@ def _run_bp(context: Context, state: State) -> None:
     bond_dim = state.bond_dim
     bp_eps = context.bp_eps
     max_bp_iters = context.max_bp_iters_number
-    new_msgs = context.backend.make_empty(context.edges_number, (bond_dim, bond_dim))
+    new_msgs = context.backend.make_empty(context.msgs_number, (bond_dim, bond_dim))
     for iter_num in range(context.max_bp_iters_number):
         for degree, tensor in state.degree_to_tensor.items():
             input_msgs_position = context.degree_to_layout[degree].input_msgs_position
@@ -126,7 +125,7 @@ def _run_bp(context: Context, state: State) -> None:
 
 def _get_extended_msgs(context: Context, ztime: float, state: State) -> Tensor:
     bond_dim = state.bond_dim
-    new_msgs = context.backend.make_empty(context.edges_number, (2 * bond_dim, 2 * bond_dim))
+    new_msgs = context.backend.make_empty(context.msgs_number, (2 * bond_dim, 2 * bond_dim))
     for degree, tensor in state.degree_to_tensor.items():
         layout = context.degree_to_layout[degree]
         evolution_times = tuple(a * ztime for a in layout.edge_ampls)

@@ -1,7 +1,6 @@
-
 import os
-from bqa.config.schedule_syntax import GET_BLOCH_VECTORS, MEASURE
-from bqa.config.sparsification import BLOCH_VECTORS_KEY, MEASUREMENT_OUTCOMES_KEY, postprocess, preprocess
+from bqa.config.sparsify_config import BLOCH_VECTORS_KEY, MEASUREMENT_OUTCOMES_KEY, postprocess
+from bqa.config.validate_config import GET_BLOCH_VECTORS, MEASURE, POSTPROCESSING_KEY
 
 os.environ["CUPY_ACCELERATORS"] = "cutensor"
 
@@ -37,8 +36,9 @@ def _run_qa(config) -> list:
     instr_exec_iter = (execute_instruction(instr_num, instr) for instr_num, instr in enumerate(context.instructions))
     return list(filter(lambda x: x is not None, instr_exec_iter))
 
+
 def run_qa(config) -> list:
-    sparse_config, info = preprocess(config)
-    result = _run_qa(sparse_config)
-    return postprocess(result, info)
+    "Runs quantum annealing simulation using given config."
+    result = _run_qa(config)
+    return postprocess(result, config.get(POSTPROCESSING_KEY))
 

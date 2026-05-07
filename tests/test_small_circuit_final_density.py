@@ -12,6 +12,13 @@ CONFIG = {
     "pinv_eps" : 1e-9,
     "bp_eps" : 1e-9,
     "max_bond_dim" : 8,
+    "schedule" : {
+        "actions" : [
+            {"weight" : 1.0},
+            "get_bloch_vectors",
+            "measure",
+        ],
+    },
 }
 
 def test_small_circuit_final_density():
