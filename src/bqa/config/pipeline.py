@@ -1,5 +1,6 @@
 class pipeline:
     def __init__(self, func):
+        self.__doc__ = func.__doc__
         self.func = func
 
     def __call__(self, *args, **kwds):

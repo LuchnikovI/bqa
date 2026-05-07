@@ -15,10 +15,13 @@ def config_to_context(config):
 
 
 def canonicalize(config):
+    "Runs validation and desugaring, outputs a desugared config if the input config was correct."
     return config | validate_config | desugar_config
 
 
 def full_preprocess(config):
+    """Runs validation, desugaring and problem sparsification, outputs a
+    desugared config of sparsified problem if the input config was correct."""
     return config | validate_config | desugar_config | sparsify_config
 
 
@@ -27,6 +30,7 @@ def get_values_iter(container):
 
 
 def get_metrics(config):
+    "Returns some metrics of a problem after sparsification."
     config = full_preprocess(config)
     nodes_number = get_nodes_number(config[NODES_KEY], config[EDGES_KEY])
     edges_number = len(config[EDGES_KEY])

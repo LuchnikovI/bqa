@@ -6,8 +6,6 @@ from pathlib import Path
 from functools import singledispatch
 from json import JSONDecodeError, load, dump
 
-from bqa.config.validate_config import EDGES_KEY, NODES_KEY
-
 CWD = os.getcwd()
 LOG_LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR"]
 DEFAULT_LOG_LEVEL = "INFO"
@@ -106,17 +104,31 @@ def format_error(e):
     return "\ncaused by: ".join(msgs)
 
 
-class json_input_output_cli:
-    def __init__(self, func):
-        self.func = func
-        self.name = func.__name__
-        self.description = func.__doc__
+def json_input_output_cli(func = None, *, doc = "Undocumented"):
 
+    def decorator(fn):
+        return JSONInputOutputCli(fn, doc)
+
+    if func is None:
+        return decorator
+    else:
+        return decorator(func)
+
+
+class JSONInputOutputCli:
+    registered_clis = {}
+    def __init__(self, func, doc):
+        name = func.__name__
+        assert name not in self.registered_clis
+        self.registered_clis[name] = doc
+        self.func = func
+        self.name = name
+        self.description = doc
 
     def print_help(self):
         print(f"""{self.description}
     
-usage: poetry run {self.name[1:]} [options]
+usage: {self.name[1:]} [options]
             
 options:
  -i | --input  [PATH]         relative to `{CWD}` (current working directory) path to `*.json` config,
@@ -168,7 +180,6 @@ options:
             result = self.func(config)
             dump_json(context["output"], result)
         except Exception as e:
-            raise e
             print(format_error(e), file=sys.stderr)
             sys.exit(1)        
 

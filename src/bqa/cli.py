@@ -1,38 +1,44 @@
+from textwrap import indent
 from bqa.benchmarking import generate_qubo_on_2d_grid, generate_qubo_on_random_regular_graph
 from bqa.config.core import canonicalize, full_preprocess, get_metrics
 from bqa.config.desugar_config import (DEFAULT_CLUSTER_COUPLING_AMPLITUDE, DEFAULT_EPS, DEFAULT_MAX_BOND_DIM,
-                                       DEFAULT_MAX_BP_ITERS_NUMBER, desug_or_warn_and_set_default_if_not_present,
+                                       DEFAULT_MAX_BP_ITERS_NUMBER, DEFAULT_TOTAL_TIME, desug_or_warn_and_set_default_if_not_present,
                                        desugared_config_to_json)
 from bqa.core import run_qa
-from bqa.cli_utils import json_input_output_cli
+from bqa.cli_utils import JSONInputOutputCli, json_input_output_cli
 from bqa.config.validate_config import (ACTIONS_KEY, BACKEND_KEY, CLUSTER_COUPLING_AMPLITUDE_KEY, DAMPING_KEY, EDGES_KEY, EPS_KEY,
-                                        FINAL_MIXING_KEY, GET_BLOCH_VECTORS, INITIAL_MIXING_KEY, MAX_BOND_DIM_KEY, MAX_BP_ITER_NUMBER_KEY,
+                                        FINAL_MIXING_KEY, INITIAL_MIXING_KEY, MAX_BOND_DIM_KEY, MAX_BP_ITER_NUMBER_KEY,
                                         MEASURE, NODES_KEY, SCHEDULE_KEY, SEED_KEY, SPARSIFICATION_KEY, STARTING_MIXING_KEY, STEPS_NUMBER_KEY,
-                                        TOTAL_TIME_KEY, WEIGHT_KEY, ConfigSyntaxError, validate_all_records, validate_config, validate_if_present, validate_non_neg_int, validate_number, validate_positive_int)
+                                        TOTAL_TIME_KEY, WEIGHT_KEY, ConfigSyntaxError, validate_all_records, validate_config, validate_non_neg_int,
+                                        validate_number, validate_positive_int)
 
 
-@json_input_output_cli
-def _validate(config):
-    "Config validator CLI. Use it to check the correctness of the config without execution."
-    return validate_config(config)
+def _list_qa_clis():
+    print("""There are following quantum annealing oriented CLI tools:""")
+    for name, doc in JSONInputOutputCli.registered_clis.items():
+        print(f"\n{name[1:]}:")
+        print(indent(doc, "\t"))
 
 
-@json_input_output_cli
+@json_input_output_cli(doc = run_qa.__doc__)
 def _run_qa(config):
-    "Quantum annealing simulation runner CLI."
     return run_qa(config)
 
 
-@json_input_output_cli
+@json_input_output_cli(doc = validate_config.__doc__)
+def _validate(config):
+    return validate_config(config)
+
+
+@json_input_output_cli(doc = canonicalize.__doc__)
 def _canonicalize(config):
-    "Config canonicalization CLI. Use it to see how the config looks after the canonicalization but before sparsification."
     return desugared_config_to_json(canonicalize(config))
 
 
-@json_input_output_cli
+@json_input_output_cli(doc = full_preprocess.__doc__)
 def _full_preprocess(config):
-    "Full config preprocessing CLI. Use it to see how the config looks after the canonicalization and sparsification, right before the execution."
     return desugared_config_to_json(full_preprocess(config))
+
 
 def validate_degree(degree):
     if not isinstance(degree, int):
@@ -41,10 +47,22 @@ def validate_degree(degree):
         raise ConfigSyntaxError(f"Must be >= 3, but got value {degree}")
 
 
-# TODO: make propper input data validation
-@json_input_output_cli
+@json_input_output_cli(
+    doc = """Generates a json config for an optimization problem on a random regular graph with
+random magnetic fields and couplings sampled uniformly from a fixed interval.
+An example of an input json config:
+     {
+         "degree" : 4,  # degree of a graph (default 3)
+         "nodes_number" : 1500,  # number of nodes in a graph (default 100)
+         "seed" :   42,   # random seed (default 42)
+         "j_max" :  1.0,  # maximal coupling value (default 1.0)
+         "j_min" : -1.0,  # minimal coupling value (default 1.0)
+         "h_max" :  1.0,  # maximal magnetic field value (default 0.0)
+         "h_min" : -1.0   # minimal magnetic field value (default 0.0)
+     },
+All the fields in json are optional and set to default values if not present."""
+)
 def _random_regular_graph(config):
-    "Generates an optimization problem on a random regular graph."
     if not isinstance(config, dict):
         raise ConfigSyntaxError(f"Input config to the random regular graph generator must be a dictionary, but recived {type(config)}")
     validate_all_records(
@@ -76,10 +94,22 @@ def _random_regular_graph(config):
     return desugared_config_to_json({EDGES_KEY : edges, NODES_KEY : nodes, SEED_KEY : seed})
 
 
-# TODO: make propper input data validation
-@json_input_output_cli
+@json_input_output_cli(
+    doc = """Generates a json config for an optimization problem on a 2d grid with
+random magnetic fields and couplings sampled uniformly from a fixed interval.
+An example of an input json config:
+     {
+         "rows" : 50,  # number of rows in a grid (default 10)
+         "cols" : 60,  # number of columns in a grid (default 10)
+         "seed" :   42,   # random seed (default 42)
+         "j_max" :  1.0,  # maximal coupling value (default 1.0)
+         "j_min" : -1.0,  # minimal coupling value (default 1.0)
+         "h_max" :  1.0,  # maximal magnetic field value (default 0.0)
+         "h_min" : -1.0   # minimal magnetic field value (default 0.0)
+    },
+All the fields in json are optional and set to default values if not present."""
+)
 def _2d_grid(config):
-    "Generates and optimization problem on a 2D grid."
     if not isinstance(config, dict):
         raise ValueError(f"Input config to the random regular graph generator must be a dictionary, but recived {type(config)}")
     validate_all_records(
@@ -111,33 +141,42 @@ def _2d_grid(config):
     return desugared_config_to_json({EDGES_KEY : edges, NODES_KEY : nodes, SEED_KEY : seed})
 
 
-@json_input_output_cli
+def validate_dict(config, name):
+    if not isinstance(config, dict):
+        raise ConfigSyntaxError(f"Input {name} must be a dictionary, but recieved `{type(config)}`")
+
+
+@json_input_output_cli(doc = "Sets backend to `cupy`.")
 def _cupy(config):
-    "Sets backend to `cupy`."
+    validate_dict(config, "config")
     config[BACKEND_KEY] = "cupy"
     return config
 
 
-@json_input_output_cli
+@json_input_output_cli(doc = "Sets default sparsification strategy.")
 def _sparsify(config):
-    "Sets default sparsification strategy."
+    validate_dict(config, "config")
     config[SPARSIFICATION_KEY] = {EPS_KEY : DEFAULT_EPS, CLUSTER_COUPLING_AMPLITUDE_KEY : DEFAULT_CLUSTER_COUPLING_AMPLITUDE}
     return config
 
 
-@json_input_output_cli
+@json_input_output_cli(doc = get_metrics.__doc__)
 def _metrics(config):
-    "Returns some metrics of the optimization problem after full preprocessing."
     return get_metrics(config)
 
 
-@json_input_output_cli
+@json_input_output_cli(
+    doc = """Sets linear quantum annealing schedule according the metrics of a given optimization problem
+after full preprocessing (validation -> desugaring -> sparsification)."""
+)
 def _adjust_schedule(config):
-    "Sets quantum annealing schedule according the problem's metrics."
-    config = full_preprocess(config)
     metrics = get_metrics(config)
-    total_time = 20 * metrics["mean_degree"] / metrics["mean_abs_coupling"]
-    steps_number = 10 * total_time * (metrics["mean_degree"] * metrics["mean_abs_coupling"] + metrics["mean_abs_field"])
+    mean_degree = metrics["mean_degree"]
+    mean_abs_coupling = metrics["mean_abs_coupling"]
+    mean_abs_field = metrics["mean_abs_field"]
+    total_time = 20 * mean_degree / mean_abs_coupling
+    dt = 1 / (10 * (mean_degree * mean_abs_coupling + mean_abs_field))
+    steps_number = int(total_time / dt) + 1
     config[SCHEDULE_KEY] = {
         TOTAL_TIME_KEY : total_time,
         STARTING_MIXING_KEY : 1.0,
@@ -146,7 +185,7 @@ def _adjust_schedule(config):
                 INITIAL_MIXING_KEY : 1.0,
                 FINAL_MIXING_KEY : 0.0,
                 WEIGHT_KEY : 1.0,
-                STEPS_NUMBER_KEY : int(steps_number),
+                STEPS_NUMBER_KEY : steps_number,
             },
             MEASURE,
         ]
@@ -154,30 +193,41 @@ def _adjust_schedule(config):
     return desugared_config_to_json(config)
 
 
-@json_input_output_cli
+@json_input_output_cli(
+    doc = f"Sets `{MAX_BOND_DIM_KEY}` twice larger."
+)
 def _x2_bond_dim(config):
-    f"Sets `{MAX_BOND_DIM_KEY}` twice larger."
-    if MAX_BOND_DIM_KEY in config:
-        config[MAX_BOND_DIM_KEY] *= 2
-    else:
-        config[MAX_BOND_DIM_KEY] = 2 * DEFAULT_MAX_BOND_DIM
+    validate_dict(config, "config")
+    config[MAX_BOND_DIM_KEY] = 2 * config.get(MAX_BOND_DIM_KEY, DEFAULT_MAX_BOND_DIM)
     return config
 
 
-@json_input_output_cli
+@json_input_output_cli(
+    doc = f"""Sets new value of damping as follows `{DAMPING_KEY} <- 0.5 * {DAMPING_KEY} + 0.5`,
+i.e. 0 -> 0.5, 0.5 -> 0.75, etc."""
+)
 def _inc_damping(config):
-    f"Sets new value of damping as follows `{DAMPING_KEY} <- 0.5 * {DAMPING_KEY} + 0.5`."
+    validate_dict(config, "config")
     prev_damping = config.get(DAMPING_KEY, 0.)
     config[DAMPING_KEY] = 0.5 * prev_damping + 0.5
     return config
 
 
-@json_input_output_cli
+@json_input_output_cli(doc = f"Sets `{MAX_BP_ITER_NUMBER_KEY}` twice larger.")
 def _x2_bp_iters(config):
-    f"Sets {MAX_BP_ITER_NUMBER_KEY} twice larger."
-    if MAX_BP_ITER_NUMBER_KEY in config:
-        config[MAX_BOND_DIM_KEY] *= 2
+    validate_dict(config, "config")
+    config[MAX_BP_ITER_NUMBER_KEY] = 2 * config.get(MAX_BP_ITER_NUMBER_KEY, DEFAULT_MAX_BP_ITERS_NUMBER)
+    return config
+
+
+@json_input_output_cli(doc = f"Sets `{TOTAL_TIME_KEY}` twice larger.")
+def _x2_total_time(config):
+    validate_dict(config, "config")
+    if SCHEDULE_KEY in config:
+        schedule = config[SCHEDULE_KEY]
+        validate_dict(schedule, "schedule")
+        schedule[TOTAL_TIME_KEY] = 2 * schedule.get(TOTAL_TIME_KEY, DEFAULT_TOTAL_TIME)
     else:
-        config[MAX_BOND_DIM_KEY] = 2 * DEFAULT_MAX_BP_ITERS_NUMBER
+        config[SCHEDULE_KEY] = {TOTAL_TIME_KEY : 2 * DEFAULT_TOTAL_TIME}
     return config
 

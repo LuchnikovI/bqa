@@ -36,7 +36,9 @@ def _run_qa(config) -> list:
     instr_exec_iter = (execute_instruction(instr_num, instr) for instr_num, instr in enumerate(context.instructions))
     return list(filter(lambda x: x is not None, instr_exec_iter))
 
+
 def run_qa(config) -> list:
+    "Runs quantum annealing simulation using given config."
     result = _run_qa(config)
     return postprocess(result, config.get(POSTPROCESSING_KEY))
 
