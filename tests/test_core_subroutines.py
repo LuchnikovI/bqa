@@ -6,7 +6,7 @@ import numpy as np
 from numpy.random import Generator, default_rng
 from numpy.typing import NDArray
 from bqa.backends import Tensor
-from bqa.config.config_canonicalization import Context
+from bqa.config.compile_config import Context
 from bqa.config.core import config_to_context
 from bqa.state import State, _initialize_state, _apply_z_layer, get_density_matrices, _run_bp, _set_to_vidal_gauge, _set_to_symmetric_gauge
 from bqa.utils import NP_DTYPE

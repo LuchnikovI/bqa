@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "bqa"
-version = "0.1.6"
+version = "0.2.0"
 description = "A framework for tensor-network–based quantum annealing simulation powered by belief propagation."
 authors = ["Ilia-Luchnikov <luchnikovilya@gmail.com>"]
 readme = "README.md"
@@ -12,7 +12,7 @@ packages = [{include = "bqa", from = "src"}]
 
 [tool.poetry.dependencies]
 python = ">=3.10,<3.14"
-numpy = "^1"
+numpy = "^2"
 networkx = "^3.0"
 
 [tool.poetry.group.test]
@@ -21,6 +21,21 @@ optional = true
 [tool.poetry.group.test.dependencies]
 pytest = "^8.4.2"
 qem = { git = "https://github.com/LuchnikovI/qem", rev = "8156bfd" }
+hypothesis = "^6.152.4"
 
 [tool.poetry.scripts]
-bqa_cli = "bqa.cli:cli"
+list_qa_clis = "bqa.cli:_list_qa_clis"
+validate = "bqa.cli:_validate"
+run_qa = "bqa.cli:_run_qa"
+canonicalize = "bqa.cli:_canonicalize"
+full_preprocess = "bqa.cli:_full_preprocess"
+random_regular_graph = "bqa.cli:_random_regular_graph"
+2d_grid = "bqa.cli:_2d_grid"
+cupy = "bqa.cli:_cupy"
+sparsify = "bqa.cli:_sparsify"
+metrics = "bqa.cli:_metrics"
+adjust_schedule = "bqa.cli:_adjust_schedule"
+x2_bond_dim = "bqa.cli:_x2_bond_dim"
+inc_damping = "bqa.cli:_inc_damping"
+x2_bp_iters = "bqa.cli:_x2_bp_iters"
+x2_total_time = "bqa.cli:_x2_total_time"
