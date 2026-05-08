@@ -1,6 +1,6 @@
 ## What is it?
 
-This package provides large-scale tensor-network-based emulator of quantum annealing, powered by belief-propagation-based inference. This implementation introduces a compilation step that classifies graph nodes by degree, groups the corresponding tensors into batched representations, groups the associated messages, enabling massively parallel belief propagation and related subroutines easelly deployable on a GPU. This design enables scaling to 100,000 qubits and beyond for a range of nontrivial problem instances.
+This package provides large-scale tensor-network-based emulator of quantum annealing, powered by belief-propagation-based inference. This implementation introduces a compilation step that classifies graph nodes by degree, groups the corresponding tensors into batched representations, groups the associated messages, enabling massively parallel belief propagation and related subroutines easelly deployable on a GPU. This design enables scaling up to 1,000,000 for a range of nontrivial problem instances.
 
 # How to use it?
 There is a [wiki](https://github.com/LuchnikovI/bqa/wiki) page with the documentation.
