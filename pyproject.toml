@@ -24,6 +24,7 @@ qem = { git = "https://github.com/LuchnikovI/qem", rev = "8156bfd" }
 hypothesis = "^6.152.4"
 
 [tool.poetry.scripts]
+run_mcp = "bqa.cli:_run_mcp"
 list_qa_clis = "bqa.cli:_list_qa_clis"
 validate = "bqa.cli:_validate"
 run_qa = "bqa.cli:_run_qa"

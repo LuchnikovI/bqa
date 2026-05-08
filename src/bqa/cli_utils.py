@@ -1,10 +1,11 @@
-from io import TextIOBase
+from io import StringIO, TextIOBase
 import sys
 import os
 import logging
 from pathlib import Path
 from functools import singledispatch
 from json import JSONDecodeError, load, dump
+from mcp.server.fastmcp import FastMCP
 
 CWD = os.getcwd()
 LOG_LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR"]
@@ -104,10 +105,15 @@ def format_error(e):
     return "\ncaused by: ".join(msgs)
 
 
+mcp = FastMCP("bqa")
+
+
 def json_input_output_cli(func = None, *, doc = "Undocumented"):
 
     def decorator(fn):
-        return JSONInputOutputCli(fn, doc)
+        obj = JSONInputOutputCli(fn, doc)
+        mcp.tool(fn.__name__, description=doc)(obj.call_mcp)
+        return obj
 
     if func is None:
         return decorator
@@ -124,6 +130,7 @@ class JSONInputOutputCli:
         self.func = func
         self.name = name
         self.description = doc
+        func.__doc__ = doc
 
     def print_help(self):
         print(f"""{self.description}
@@ -181,5 +188,20 @@ options:
             dump_json(context["output"], result)
         except Exception as e:
             print(format_error(e), file=sys.stderr)
-            sys.exit(1)        
+            sys.exit(1)
+
+
+    async def call_mcp(self, state: dict) -> dict:
+        logs = StringIO()
+        logging.basicConfig(
+            level=logging.WARNING,
+            format="%(asctime)s [%(levelname)s] %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+            stream=logs
+        )
+        try:
+            result = self.func(state)
+            return {"result" : result, "logs" : logs.getvalue()}
+        except Exception as e:
+            return {"error" : format_error(e), "logs" : logs.getvalue()}
 

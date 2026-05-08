@@ -5,12 +5,16 @@ from bqa.config.desugar_config import (DEFAULT_CLUSTER_COUPLING_AMPLITUDE, DEFAU
                                        DEFAULT_MAX_BP_ITERS_NUMBER, DEFAULT_TOTAL_TIME, desug_or_warn_and_set_default_if_not_present,
                                        desugared_config_to_json)
 from bqa.core import run_qa
-from bqa.cli_utils import JSONInputOutputCli, json_input_output_cli
+from bqa.cli_utils import JSONInputOutputCli, json_input_output_cli, mcp
 from bqa.config.validate_config import (ACTIONS_KEY, BACKEND_KEY, CLUSTER_COUPLING_AMPLITUDE_KEY, DAMPING_KEY, EDGES_KEY, EPS_KEY,
                                         FINAL_MIXING_KEY, INITIAL_MIXING_KEY, MAX_BOND_DIM_KEY, MAX_BP_ITER_NUMBER_KEY,
                                         MEASURE, NODES_KEY, SCHEDULE_KEY, SEED_KEY, SPARSIFICATION_KEY, STARTING_MIXING_KEY, STEPS_NUMBER_KEY,
                                         TOTAL_TIME_KEY, WEIGHT_KEY, ConfigSyntaxError, validate_all_records, validate_config, validate_non_neg_int,
                                         validate_number, validate_positive_int)
+
+
+def _run_mcp():
+    mcp.run(transport="stdio")
 
 
 def _list_qa_clis():
