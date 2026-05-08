@@ -8,7 +8,7 @@ There is a [wiki](https://github.com/LuchnikovI/bqa/wiki) page with the document
 ## How to install?
 
 1) Clone this repo;
-2) Run `poetry env acrivate && poetry install` from the root of the clonned repo.
+2) Run `poetry env activate && poetry install` from the root of the clonned repo.
 
 To validate the computation results, some examples and tests rely on an exact quantum circuit simulator available at https://github.com/LuchnikovI/qem. To install it, follow the steps below:
 
